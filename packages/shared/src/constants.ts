@@ -31,6 +31,7 @@ export const MODEL_STRING_REGEX = /^[a-z0-9_-]+,[a-z0-9_./-]+$/i;
 export const API_KEY_PATTERNS = [
   /^sk-[-a-z0-9]+$/i,           // OpenAI API keys
   /^sk-proj-[-a-z0-9]+$/i,      // OpenAI project API keys
+  /^sk-ant-[-a-z0-9]+$/i,       // Anthropic API keys
   /^pk-[-a-z0-9]+$/i,           // Stripe API keys
   /^xox[baprs]-[-a-z0-9]+$/i,   // Slack API keys
   /^ghp_[a-zA-Z0-9]{36}$/i,     // GitHub personal access tokens
