@@ -300,4 +300,35 @@ export class ProjectManager {
 
     return project;
   }
+
+  /**
+   * List all registered projects sorted alphabetically by name (Story 1.3)
+   * @returns Array of ProjectConfig sorted by name, or undefined if no projects
+   */
+  async listProjects(): Promise<ProjectConfig[] | undefined> {
+    try {
+      // Load projects data using existing loadProjects() pattern
+      const projectsData = await this.loadProjects();
+
+      // Handle empty or missing data (graceful degradation per NFR-R3)
+      if (!projectsData || !projectsData.projects || Object.keys(projectsData.projects).length === 0) {
+        return undefined;
+      }
+
+      // Convert projects object to array
+      const projectsArray = Object.values(projectsData.projects);
+
+      // Sort alphabetically by project name (AC#5)
+      const sortedProjects = projectsArray.sort((a, b) =>
+        a.name.localeCompare(b.name)
+      );
+
+      return sortedProjects;
+    } catch (error) {
+      // Graceful degradation for corrupted files or unexpected failures (AC#4)
+      // AC#4 requires debug-level warning for graceful degradation scenarios
+      console.debug(`Failed to list projects: ${(error as Error).message}`);
+      return undefined;
+    }
+  }
 }

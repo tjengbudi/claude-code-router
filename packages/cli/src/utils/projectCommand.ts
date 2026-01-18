@@ -8,13 +8,24 @@ import path from 'path';
 export async function handleProjectCommand(args: string[]): Promise<void> {
   const subCommand = args[0];
 
+  if (!subCommand || subCommand === '--help' || subCommand === '-h') {
+    console.log('Usage: ccr project <command> [options]');
+    console.log('\nCommands:');
+    console.log('  add <path>   Register a new project');
+    console.log('  list         List all registered projects');
+    return;
+  }
+
   switch (subCommand) {
     case 'add':
       await handleProjectAdd(args.slice(1));
       break;
+    case 'list':
+      await handleProjectList();
+      break;
     default:
       console.error(`Unknown project command: ${subCommand}`);
-      console.error('Available commands: add');
+      console.error('Available commands: add, list');
       process.exit(1);
   }
 }
@@ -65,4 +76,43 @@ async function handleProjectAdd(args: string[]): Promise<void> {
       console.log(`  ├─ ${agent.name} → CCR-AGENT-ID: ${agent.id}`);
     }
   }
+}
+
+/**
+ * Handle 'project list' command (Story 1.3: Display all registered projects with agents)
+ */
+async function handleProjectList(): Promise<void> {
+  const pm = new ProjectManager(PROJECTS_FILE);
+  const projects = await pm.listProjects();
+
+  // AC#3: Display helpful message for empty projects
+  if (!projects || projects.length === 0) {
+    console.log('No projects registered. Add a project with: ccr project add <path>');
+    return;
+  }
+
+  // AC#1, #2, #5: Display formatted project list
+  console.log(`\n📦 Registered Projects (${projects.length})\n`);
+
+  projects.forEach((project, index) => {
+    console.log(`${index + 1}. ${project.name}`);
+    console.log(`   ID: ${project.id}`);
+    console.log(`   Path: ${project.path}`);
+    console.log(`   Agents: ${project.agents.length}`);
+
+    // AC#2: Display agent-to-model mappings
+    if (project.agents.length > 0) {
+      console.log(`   Agent Details:`);
+      project.agents.forEach((agent, i) => {
+        // Show [default] for all agents in Epic 1 (model configuration in Epic 2)
+        // AC#2: Use configured model if available, otherwise default
+        const model = (agent as any).model || '[default]';
+        const isLast = i === project.agents.length - 1;
+        const prefix = isLast ? '   └─' : '   ├─';
+        console.log(`${prefix} ${agent.name} → ${model}`);
+        console.log(`      CCR-AGENT-ID: ${agent.id}`);
+      });
+    }
+    console.log(''); // Separator between projects (AC#5)
+  });
 }

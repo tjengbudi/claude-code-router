@@ -397,4 +397,101 @@ This is the agent content.
       expect(readonlyContent).toBe('# Readonly Agent');
     });
   });
+
+  // Story 1.3: listProjects() tests
+  describe('listProjects', () => {
+    it('should return sorted projects alphabetically by name', async () => {
+      const pm = new ProjectManager(TEST_PROJECTS_FILE);
+
+      // Create projects with names that need sorting
+      await pm.addProject('/tmp/zebra-project');
+      await pm.addProject('/tmp/alpha-project');
+      await pm.addProject('/tmp/mike-project');
+
+      const result = await pm.listProjects();
+
+      expect(result).toBeDefined();
+      expect(result).toHaveLength(3);
+      expect(result![0].name).toBe('alpha-project');
+      expect(result![1].name).toBe('mike-project');
+      expect(result![2].name).toBe('zebra-project');
+    });
+
+    it('should return undefined when projects.json is empty', async () => {
+      const pm = new ProjectManager(TEST_PROJECTS_FILE);
+
+      // Create empty projects.json
+      await pm.loadProjects();
+
+      const result = await pm.listProjects();
+
+      expect(result).toBeUndefined();
+    });
+
+    it('should return undefined when projects.json is missing', async () => {
+      const pm = new ProjectManager(TEST_PROJECTS_FILE);
+
+      // Don't create any projects file
+      const result = await pm.listProjects();
+
+      expect(result).toBeUndefined();
+    });
+
+    it('should handle corrupted projects.json gracefully', async () => {
+      const pm = new ProjectManager(TEST_PROJECTS_FILE);
+
+      // Write corrupted JSON
+      await writeFile(TEST_PROJECTS_FILE, '{ invalid json }', 'utf-8');
+
+      const result = await pm.listProjects();
+
+      // Should return undefined for graceful degradation
+      expect(result).toBeUndefined();
+    });
+
+    it('should include all project metadata in returned objects', async () => {
+      const pm = new ProjectManager(TEST_PROJECTS_FILE);
+
+      const project = await pm.addProject('/tmp/test-project');
+
+      const result = await pm.listProjects();
+
+      expect(result).toHaveLength(1);
+      expect(result![0].id).toBe(project.id);
+      expect(result![0].name).toBe(project.name);
+      expect(result![0].path).toBe(project.path);
+      expect(result![0].agents).toEqual(project.agents);
+      expect(result![0].createdAt).toBe(project.createdAt);
+      expect(result![0].updatedAt).toBe(project.updatedAt);
+    });
+
+    it('should include agents with metadata in returned projects', async () => {
+      const pm = new ProjectManager(TEST_PROJECTS_FILE);
+      const testProjectPath = path.join(os.tmpdir(), `test-project-agents-${Date.now()}`);
+      const agentsDir = path.join(testProjectPath, '.bmad', 'bmm', 'agents');
+      await mkdir(agentsDir, { recursive: true });
+
+      // Create agent files
+      await writeFile(path.join(agentsDir, 'dev.md'), '# Dev Agent', 'utf-8');
+      await writeFile(path.join(agentsDir, 'sm.md'), '# SM Agent', 'utf-8');
+
+      const project = await pm.addProject(testProjectPath);
+
+      const result = await pm.listProjects();
+
+      expect(result).toHaveLength(1);
+      expect(result![0].agents).toHaveLength(2);
+      // Check that both agents exist (order may vary due to glob)
+      const agentNames = result![0].agents.map(a => a.name);
+      expect(agentNames).toContain('dev.md');
+      expect(agentNames).toContain('sm.md');
+      // Verify all agents have IDs
+      result![0].agents.forEach(agent => {
+        expect(agent.id).toBeDefined();
+      });
+
+      // Cleanup
+      await rm(testProjectPath, { recursive: true });
+    });
+  });
 });
