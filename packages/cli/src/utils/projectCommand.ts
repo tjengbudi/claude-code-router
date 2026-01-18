@@ -1,6 +1,7 @@
 import { ProjectManager, Validators, PROJECTS_FILE } from '@CCR/shared';
 import path from 'path';
 import type { RescanResult } from '@CCR/shared';
+import { interactiveModelConfiguration } from '../interactive/modelConfig';
 
 /**
  * Handle project commands
@@ -12,9 +13,10 @@ export async function handleProjectCommand(args: string[]): Promise<void> {
   if (!subCommand || subCommand === '--help' || subCommand === '-h') {
     console.log('Usage: ccr project <command> [options]');
     console.log('\nCommands:');
-    console.log('  add <path>   Register a new project');
-    console.log('  list         List all registered projects');
-    console.log('  scan <id>    Rescan project for new or deleted agents');
+    console.log('  add <path>       Register a new project');
+    console.log('  list             List all registered projects');
+    console.log('  scan <id>        Rescan project for new or deleted agents');
+    console.log('  configure <id>   Configure agent models interactively');
     return;
   }
 
@@ -28,9 +30,12 @@ export async function handleProjectCommand(args: string[]): Promise<void> {
     case 'scan':
       await handleProjectScan(args.slice(1));
       break;
+    case 'configure':
+      await handleProjectConfigure(args.slice(1));
+      break;
     default:
       console.error(`Unknown project command: ${subCommand}`);
-      console.error('Available commands: add, list, scan');
+      console.error('Available commands: add, list, scan, configure');
       process.exit(1);
   }
 }
@@ -186,5 +191,23 @@ async function handleProjectScan(args: string[]): Promise<void> {
       console.log('\nList available projects: ccr project list');
     }
   }
+}
+
+/**
+ * Handle 'project configure' command (Story 2.2: Interactive CLI model assignment)
+ * @param args - Command arguments (e.g., ['<project-id>'])
+ */
+async function handleProjectConfigure(args: string[]): Promise<void> {
+  const projectId = args[0];
+
+  if (!projectId) {
+    console.error('✗ Error: Project ID required');
+    console.error('\nUsage: ccr project configure <project-id>');
+    console.error('\nList projects: ccr project list');
+    process.exit(1);
+  }
+
+  // Call interactive model configuration
+  await interactiveModelConfiguration(projectId);
 }
 

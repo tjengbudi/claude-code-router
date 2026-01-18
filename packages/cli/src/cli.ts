@@ -57,7 +57,7 @@ Commands:
   model         Interactive model selection and configuration
   preset        Manage presets (export, install, list, delete)
   install       Install preset from GitHub marketplace
-  project       Manage BMM projects (add, list)
+  project       Manage BMM projects (add, list, scan, configure)
   activate      Output environment variables for shell integration
   ui            Open the web UI in browser
   -v, version   Show version information
@@ -76,6 +76,7 @@ Examples:
   ccr preset list                        # List all presets
   ccr install my-preset                  # Install preset from marketplace
   ccr project add /home/user/my-project  # Add a BMM project to CCR
+  ccr project configure <id>             # Configure agent models interactively
   eval "$(ccr activate)"  # Set environment variables globally
   ccr ui
 `;
