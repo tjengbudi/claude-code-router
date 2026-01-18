@@ -18,6 +18,7 @@ import { join } from "path";
 import { parseStatusLineData, StatusLineInput } from "./utils/statusline";
 import {handlePresetCommand} from "./utils/preset";
 import { handleInstallCommand } from "./utils/installCommand";
+import { handleProjectCommand } from "./utils/projectCommand";
 
 
 const command = process.argv[2];
@@ -33,6 +34,7 @@ const KNOWN_COMMANDS = [
   "model",
   "preset",
   "install",
+  "project",
   "activate",
   "env",
   "ui",
@@ -55,6 +57,7 @@ Commands:
   model         Interactive model selection and configuration
   preset        Manage presets (export, install, list, delete)
   install       Install preset from GitHub marketplace
+  project       Manage BMM projects (add, list)
   activate      Output environment variables for shell integration
   ui            Open the web UI in browser
   -v, version   Show version information
@@ -72,6 +75,7 @@ Examples:
   ccr preset install /path/to/preset     # Install a preset from directory
   ccr preset list                        # List all presets
   ccr install my-preset                  # Install preset from marketplace
+  ccr project add /home/user/my-project  # Add a BMM project to CCR
   eval "$(ccr activate)"  # Set environment variables globally
   ccr ui
 `;
@@ -271,6 +275,9 @@ async function main() {
     case "install":
       const presetName = process.argv[3];
       await handleInstallCommand(presetName);
+      break;
+    case "project":
+      await handleProjectCommand(process.argv.slice(3));
       break;
     case "activate":
     case "env":

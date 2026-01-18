@@ -1,5 +1,10 @@
 export * from "./constants";
 
+// Export ProjectManager and related types
+export * from './projectManager';
+export * from './validation';
+export * from './types/agent';
+
 // Export preset-related functionality
 export * from './preset/types';
 export * from './preset/sensitiveFields';

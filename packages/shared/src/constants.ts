@@ -16,6 +16,12 @@ export const REFERENCE_COUNT_FILE = path.join(os.tmpdir(), "claude-code-referenc
 // Claude projects directory
 export const CLAUDE_PROJECTS_DIR = path.join(os.homedir(), ".claude", "projects");
 
+// CCR projects file
+export const PROJECTS_FILE = path.join(HOME_DIR, "projects.json");
+
+// Agent ID regex pattern (UUID v4)
+export const AGENT_ID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 
 export interface DefaultConfig {
   LOG: boolean;
