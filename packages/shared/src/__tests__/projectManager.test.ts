@@ -75,7 +75,7 @@ describe('ProjectManager', () => {
 
       expect(fs.writeFile).toHaveBeenCalled();
       const writeCall = (fs.writeFile as jest.Mock).mock.calls[0];
-      const savedContent = JSON.parse(writeCall[1].replace('// Project configurations for CCR agent system\n', ''));
+      const savedContent = JSON5.parse(writeCall[1].replace('// Project configurations for CCR agent system\n', ''));
 
       expect(savedContent.projects[projectId].agents[0].model).toBeUndefined();
     });
