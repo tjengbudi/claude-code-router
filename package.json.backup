@@ -18,16 +18,7 @@
     "dev:ui": "pnpm --filter @CCR/ui dev",
     "dev:core": "pnpm --filter @musistudio/llms dev",
     "dev:docs": "pnpm --filter claude-code-router-docs start",
-    "serve:docs": "pnpm --filter claude-code-router-docs serve",
-    "test": "jest",
-    "test:nfr": "jest tests/nfr --verbose",
-    "test:nfr:security": "jest tests/nfr/security.spec.ts --verbose",
-    "test:nfr:reliability": "jest tests/nfr/reliability.spec.ts --verbose",
-    "test:nfr:performance": "jest tests/nfr/performance.spec.ts --verbose",
-    "test:nfr:load": "jest tests/nfr/load-testing.spec.ts --verbose",
-    "test:nfr:coverage": "jest tests/nfr --coverage",
-    "test:nfr:watch": "jest tests/nfr --watch",
-    "test:upstream-merge": "bash scripts/test-upstream-merge.sh"
+    "serve:docs": "pnpm --filter claude-code-router-docs serve"
   },
   "bin": {
     "ccr": "dist/cli.js"
@@ -45,13 +36,11 @@
     "@jest/globals": "^30.2.0",
     "@types/jest": "^30.0.0",
     "@types/node": "^24.0.15",
-    "@types/uuid": "^11.0.0",
     "esbuild": "^0.25.1",
     "jest": "^30.2.0",
     "shx": "^0.4.0",
     "ts-jest": "^29.4.6",
-    "typescript": "^5.8.2",
-    "uuid": "^11.1.0"
+    "typescript": "^5.8.2"
   },
   "pnpm": {
     "overrides": {
