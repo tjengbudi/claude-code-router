@@ -36,13 +36,57 @@ export class ProjectManager {
   }
 
   /**
+   * Safely write to a file using the atomic write with backup pattern
+   * @param filePath - Absolute path to the file
+   * @param content - Content to write
+   * @throws Error if write fails
+   */
+  private async safeFileWrite(filePath: string, content: string): Promise<void> {
+    const backup = `${filePath}.backup`;
+    let backupCreated = false;
+
+    try {
+      // 1. Create backup of original file (if exists)
+      try {
+        await fs.access(filePath);
+        await fs.copyFile(filePath, backup);
+        backupCreated = true;
+      } catch {
+        // File doesn't exist, no backup needed
+      }
+
+      // 2. Write new content atomically
+      await fs.writeFile(filePath, content, 'utf-8');
+
+      // 3. Delete backup on success
+      if (backupCreated) {
+        try {
+          await fs.unlink(backup);
+        } catch (err) {
+          console.warn(`Warning: Could not delete backup file: ${backup}`);
+        }
+      }
+    } catch (error) {
+      // 4. Restore from backup on failure
+      if (backupCreated) {
+        try {
+          await fs.copyFile(backup, filePath);
+          await fs.unlink(backup);
+        } catch {
+          // Restore failed, throw original error
+        }
+      }
+      throw error;
+    }
+  }
+
+  /**
    * Save projects data to projects.json (JSON5 format with comments)
    * Uses atomic write with backup pattern for safety
    * Validates write permissions before attempting file operations
    */
   private async saveProjects(data: ProjectsData): Promise<void> {
     const dirPath = path.dirname(this.projectsFile);
-    const backup = `${this.projectsFile}.backup`;
 
     // NFR-S2: Validate write permissions before file operations
     try {
@@ -51,45 +95,14 @@ export class ProjectManager {
       throw new Error(`Cannot write to ${this.projectsFile}: directory is not writable`);
     }
 
-    // 1. Create backup of original file (if exists)
-    let backupCreated = false;
-    try {
-      await fs.access(this.projectsFile);
-      await fs.copyFile(this.projectsFile, backup);
-      backupCreated = true;
-    } catch {
-      // File doesn't exist, no backup needed
-    }
+    // Ensure directory exists
+    await fs.mkdir(dirPath, { recursive: true });
 
-    try {
-      // 2. Ensure directory exists
-      await fs.mkdir(dirPath, { recursive: true });
+    // Prepare content
+    const content = `// Project configurations for CCR agent system\n${JSON5.stringify(data, { space: 2 })}`;
 
-      // 3. Write new content atomically
-      const content = `// Project configurations for CCR agent system\n${JSON5.stringify(data, { space: 2 })}`;
-      await fs.writeFile(this.projectsFile, content, 'utf-8');
-
-      // 4. Delete backup on success
-      if (backupCreated) {
-        try {
-          await fs.unlink(backup);
-        } catch (err) {
-          // Log warning but don't fail - backup cleanup is non-critical
-          console.warn(`Warning: Could not delete backup file: ${backup}`);
-        }
-      }
-    } catch (error) {
-      // 5. Restore from backup on failure
-      if (backupCreated) {
-        try {
-          await fs.copyFile(backup, this.projectsFile);
-          await fs.unlink(backup);
-        } catch {
-          // Restore failed, throw original error
-        }
-      }
-      throw error;
-    }
+    // Use safe write helper
+    await this.safeFileWrite(this.projectsFile, content);
   }
 
   /**
@@ -128,49 +141,21 @@ export class ProjectManager {
       throw new Error(`Invalid UUID generated: ${agentId}`);
     }
 
-    // AC3: Atomic write with backup pattern
-    const backup = `${agentPath}.backup`;
-    let backupCreated = false;
-
-    try {
-      // Create backup
-      await fs.copyFile(agentPath, backup);
-      backupCreated = true;
-
-      // AC5: Append ID tag at end while preserving all content
-      // Fix: Do not use trimEnd() as it violates content preservation requirement
-      // Ensure there is at least one newline before the tag if the file is not empty
-      let separator = '\n\n';
-      if (content.length === 0) {
-        separator = '';
-      } else if (content.endsWith('\n\n')) {
-        separator = '';
-      } else if (content.endsWith('\n')) {
-        separator = '\n';
-      }
-
-      const idTag = `${separator}${AGENT_ID_TAG_PATTERN.replace('%s', agentId)}`;
-      await fs.writeFile(agentPath, content + idTag, 'utf-8');
-
-      // Delete backup on success
-      try {
-        await fs.unlink(backup);
-      } catch (err) {
-        // Log warning but don't fail - backup cleanup is non-critical
-        console.warn(`Warning: Could not delete backup file: ${backup}`);
-      }
-    } catch (error) {
-      // Restore from backup on failure
-      if (backupCreated) {
-        try {
-          await fs.copyFile(backup, agentPath);
-          await fs.unlink(backup);
-        } catch {
-          // Restore failed, throw original error
-        }
-      }
-      throw error;
+    // AC5: Append ID tag at end while preserving all content
+    let separator = '\n\n';
+    if (content.length === 0) {
+      separator = '';
+    } else if (content.endsWith('\n\n')) {
+      separator = '';
+    } else if (content.endsWith('\n')) {
+      separator = '\n';
     }
+
+    const idTag = `${separator}${AGENT_ID_TAG_PATTERN.replace('%s', agentId)}`;
+    const newContent = content + idTag;
+
+    // AC3: Atomic write with backup pattern using helper
+    await this.safeFileWrite(agentPath, newContent);
 
     return agentId;
   }
@@ -459,5 +444,89 @@ export class ProjectManager {
       failedAgents,
       totalAgents: project.agents.length,
     } as RescanResult;
+  }
+
+  /**
+   * Set model configuration for an agent - Story 2.1
+   * Stores agent-to-model mapping in projects.json under the agent's entry
+   * @param projectId - UUID of the project containing the agent
+   * @param agentId - UUID of the agent to configure
+   * @param model - Model string (e.g., "openai,gpt-4o") or undefined to remove model
+   * @throws Error if project not found, agent not found, or model format invalid
+   */
+  async setAgentModel(projectId: string, agentId: string, model: string | undefined): Promise<void> {
+    // Load projects data
+    const data = await this.loadProjects();
+    const project = data.projects[projectId];
+
+    // Validate project exists
+    if (!project) {
+      throw new Error(`Project not found: ${projectId}`);
+    }
+
+    // Find agent in project
+    const agent = project.agents.find(a => a.id === agentId);
+    if (!agent) {
+      throw new Error(`Agent not found: ${agentId} in project: ${projectId}`);
+    }
+
+    // Validate model string format if provided (AC: 2)
+    if (model !== undefined) {
+      if (!Validators.isValidModelString(model)) {
+        throw new Error(`Invalid model string format: ${model}. Expected format: "provider,modelname" (e.g., "openai,gpt-4o")`);
+      }
+      // Security: Ensure NO API keys in model string (AC: 5)
+      // The regex validation prevents common API key patterns (contains comma, long strings, special chars)
+    }
+
+    // Update agent model (AC: 1, 3)
+    if (model === undefined) {
+      // Remove model property to use Router.default fallback
+      delete agent.model;
+    } else {
+      agent.model = model;
+    }
+
+    // Update project timestamp
+    project.updatedAt = new Date().toISOString();
+
+    // Save to file using atomic write pattern
+    await this.saveProjects(data);
+  }
+
+  /**
+   * Get model configuration by agent ID - Story 2.1
+   * Searches across all projects to find agent and return its model
+   * @param agentId - UUID of the agent
+   * @returns Model string if configured, undefined if not found or not set (Router.default fallback)
+   */
+  async getModelByAgentId(agentId: string): Promise<string | undefined> {
+    // Validate agent ID format
+    if (!Validators.isValidAgentId(agentId)) {
+      console.debug(`Invalid agent ID format: ${agentId}`);
+      return undefined;  // Graceful degradation - use Router.default
+    }
+
+    // Load projects data
+    const data = await this.loadProjects();
+
+    // Search for agent across all projects (O(n) search)
+    for (const project of Object.values(data.projects)) {
+      const agent = project.agents.find(a => a.id === agentId);
+      if (agent) {
+        // Return model if configured, undefined otherwise (AC: 3)
+        if (agent.model) {
+          console.debug(`Found model for agent ${agentId}: ${agent.model}`);
+          return agent.model;
+        }
+        // Model not set - return undefined for Router.default fallback
+        console.debug(`Agent ${agentId} found but no model configured`);
+        return undefined;
+      }
+    }
+
+    // Agent not found - return undefined for graceful degradation (AC: 3)
+    console.debug(`Agent not found: ${agentId}`);
+    return undefined;
   }
 }

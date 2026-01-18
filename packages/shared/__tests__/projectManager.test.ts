@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, jest } from '@jest/globals';
 import { ProjectManager } from '../src/projectManager';
 import { PROJECTS_FILE } from '../src/constants';
 import { rm, readFile, writeFile, mkdir, unlink } from 'fs/promises';
@@ -644,7 +644,7 @@ This is the agent content.
 
     it('should log removed agents at info level', async () => {
       const pm = new ProjectManager(TEST_PROJECTS_FILE);
-      const consoleInfoSpy = vi.spyOn(console, 'info');
+      const consoleInfoSpy = jest.spyOn(console, 'info');
 
       // Delete an agent file
       await unlink(path.join(agentsDir, 'sm.md'));
@@ -788,6 +788,252 @@ This is the agent content.
       const result = await pm.getProject(fakeId);
 
       expect(result).toBeUndefined();
+    });
+  });
+
+  // Story 2.1: setAgentModel() tests
+  describe('setAgentModel', () => {
+    let testProjectPath: string;
+    let agentsDir: string;
+    let projectId: string;
+    let agentId: string;
+
+    beforeEach(async () => {
+      // Create test project structure
+      testProjectPath = path.join(os.tmpdir(), `test-project-${Date.now()}`);
+      agentsDir = path.join(testProjectPath, '.bmad', 'bmm', 'agents');
+      await mkdir(agentsDir, { recursive: true });
+
+      // Create agent file
+      await writeFile(path.join(agentsDir, 'dev.md'), '# Dev Agent', 'utf-8');
+
+      // Add project to get project ID
+      const pm = new ProjectManager(TEST_PROJECTS_FILE);
+      const project = await pm.addProject(testProjectPath);
+      projectId = project.id;
+      agentId = project.agents[0].id;
+    });
+
+    afterEach(async () => {
+      // Clean up test project
+      if (existsSync(testProjectPath)) {
+        await rm(testProjectPath, { recursive: true });
+      }
+    });
+
+    it('should set model for an agent', async () => {
+      const pm = new ProjectManager(TEST_PROJECTS_FILE);
+
+      await pm.setAgentModel(projectId, agentId, 'openai,gpt-4o');
+
+      // Verify model was saved
+      const project = await pm.getProject(projectId);
+      expect(project!.agents[0].model).toBe('openai,gpt-4o');
+    });
+
+    it('should update existing model configuration', async () => {
+      const pm = new ProjectManager(TEST_PROJECTS_FILE);
+
+      // Set initial model
+      await pm.setAgentModel(projectId, agentId, 'openai,gpt-4o');
+
+      // Update to different model
+      await pm.setAgentModel(projectId, agentId, 'anthropic,claude-3-5-sonnet-20241022');
+
+      // Verify model was updated
+      const project = await pm.getProject(projectId);
+      expect(project!.agents[0].model).toBe('anthropic,claude-3-5-sonnet-20241022');
+    });
+
+    it('should remove model property when setting undefined', async () => {
+      const pm = new ProjectManager(TEST_PROJECTS_FILE);
+
+      // Set initial model
+      await pm.setAgentModel(projectId, agentId, 'openai,gpt-4o');
+
+      // Remove model by setting undefined
+      await pm.setAgentModel(projectId, agentId, undefined);
+
+      // Verify model property was removed
+      const project = await pm.getProject(projectId);
+      expect(project!.agents[0].model).toBeUndefined();
+    });
+
+    it('should reject invalid model string format', async () => {
+      const pm = new ProjectManager(TEST_PROJECTS_FILE);
+
+      // Test without comma separator
+      await expect(pm.setAgentModel(projectId, agentId, 'openai-gpt-4o')).rejects.toThrow(/Invalid model string format/);
+
+      // Test with API key pattern (OpenAI project key - minimum length)
+      await expect(pm.setAgentModel(projectId, agentId, 'sk-proj-abc123def456,gpt-4o')).rejects.toThrow(/Invalid model string format/);
+      await expect(pm.setAgentModel(projectId, agentId, 'openai,sk-proj-abc123def456')).rejects.toThrow(/Invalid model string format/);
+
+      // Test with "key" keyword (security check)
+      await expect(pm.setAgentModel(projectId, agentId, 'openai,api-key-gpt-4o')).rejects.toThrow(/Invalid model string format/);
+
+      // Test empty string
+      await expect(pm.setAgentModel(projectId, agentId, '')).rejects.toThrow(/Invalid model string format/);
+    });
+
+    it('should throw error for non-existent project', async () => {
+      const pm = new ProjectManager(TEST_PROJECTS_FILE);
+
+      const fakeProjectId = uuidv4();
+      await expect(pm.setAgentModel(fakeProjectId, agentId, 'openai,gpt-4o')).rejects.toThrow(/Project not found/);
+    });
+
+    it('should throw error for non-existent agent', async () => {
+      const pm = new ProjectManager(TEST_PROJECTS_FILE);
+
+      const fakeAgentId = uuidv4();
+      await expect(pm.setAgentModel(projectId, fakeAgentId, 'openai,gpt-4o')).rejects.toThrow(/Agent not found/);
+    });
+
+    it('should use atomic write pattern for file update', async () => {
+      const pm = new ProjectManager(TEST_PROJECTS_FILE);
+
+      await pm.setAgentModel(projectId, agentId, 'openai,gpt-4o');
+
+      // Verify backup file was deleted (atomic write success)
+      const backupPath = `${TEST_PROJECTS_FILE}.backup`;
+      expect(existsSync(backupPath)).toBe(false);
+
+      // Verify projects.json was updated
+      const project = await pm.getProject(projectId);
+      expect(project!.agents[0].model).toBe('openai,gpt-4o');
+    });
+
+    it('should update project timestamp', async () => {
+      const pm = new ProjectManager(TEST_PROJECTS_FILE);
+
+      const projectBefore = await pm.getProject(projectId);
+      const initialTimestamp = projectBefore!.updatedAt;
+
+      // Wait to ensure timestamp difference
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      await pm.setAgentModel(projectId, agentId, 'openai,gpt-4o');
+
+      const projectAfter = await pm.getProject(projectId);
+      const finalTimestamp = projectAfter!.updatedAt;
+
+      expect(finalTimestamp).not.toBe(initialTimestamp);
+    });
+  });
+
+  // Story 2.1: getModelByAgentId() tests
+  describe('getModelByAgentId', () => {
+    let testProjectPath: string;
+    let agentsDir: string;
+    let projectId: string;
+    let agentId: string;
+
+    beforeEach(async () => {
+      // Create test project structure
+      testProjectPath = path.join(os.tmpdir(), `test-project-${Date.now()}`);
+      agentsDir = path.join(testProjectPath, '.bmad', 'bmm', 'agents');
+      await mkdir(agentsDir, { recursive: true });
+
+      // Create agent file
+      await writeFile(path.join(agentsDir, 'dev.md'), '# Dev Agent', 'utf-8');
+
+      // Add project to get project ID
+      const pm = new ProjectManager(TEST_PROJECTS_FILE);
+      const project = await pm.addProject(testProjectPath);
+      projectId = project.id;
+      agentId = project.agents[0].id;
+    });
+
+    afterEach(async () => {
+      // Clean up test project
+      if (existsSync(testProjectPath)) {
+        await rm(testProjectPath, { recursive: true });
+      }
+    });
+
+    it('should return model when agent has model configured', async () => {
+      const pm = new ProjectManager(TEST_PROJECTS_FILE);
+
+      await pm.setAgentModel(projectId, agentId, 'openai,gpt-4o');
+
+      const model = await pm.getModelByAgentId(agentId);
+
+      expect(model).toBe('openai,gpt-4o');
+    });
+
+    it('should return undefined when agent has no model configured', async () => {
+      const pm = new ProjectManager(TEST_PROJECTS_FILE);
+
+      // Agent exists but no model set
+      const model = await pm.getModelByAgentId(agentId);
+
+      expect(model).toBeUndefined();
+    });
+
+    it('should return undefined for non-existent agent', async () => {
+      const pm = new ProjectManager(TEST_PROJECTS_FILE);
+
+      const fakeAgentId = uuidv4();
+      const model = await pm.getModelByAgentId(fakeAgentId);
+
+      expect(model).toBeUndefined();
+    });
+
+    it('should return undefined for invalid agent ID format', async () => {
+      const pm = new ProjectManager(TEST_PROJECTS_FILE);
+
+      const model = await pm.getModelByAgentId('invalid-agent-id');
+
+      expect(model).toBeUndefined();
+    });
+
+    it('should find agent across all projects (O(n) search)', async () => {
+      const pm = new ProjectManager(TEST_PROJECTS_FILE);
+
+      // Create second project with agent
+      const testProjectPath2 = path.join(os.tmpdir(), `test-project2-${Date.now()}`);
+      const agentsDir2 = path.join(testProjectPath2, '.bmad', 'bmm', 'agents');
+      await mkdir(agentsDir2, { recursive: true });
+      await writeFile(path.join(agentsDir2, 'sm.md'), '# SM Agent', 'utf-8');
+
+      const project2 = await pm.addProject(testProjectPath2);
+      const agentId2 = project2.agents[0].id;
+
+      // Set model on agent in second project
+      await pm.setAgentModel(project2.id, agentId2, 'anthropic,claude-3-5-sonnet-20241022');
+
+      // Find agent by searching across projects
+      const model = await pm.getModelByAgentId(agentId2);
+
+      expect(model).toBe('anthropic,claude-3-5-sonnet-20241022');
+
+      // Cleanup
+      await rm(testProjectPath2, { recursive: true });
+    });
+
+    it('should handle missing projects.json gracefully', async () => {
+      const pm = new ProjectManager(TEST_PROJECTS_FILE);
+
+      // Remove projects file
+      if (existsSync(TEST_PROJECTS_FILE)) {
+        await rm(TEST_PROJECTS_FILE);
+      }
+
+      const model = await pm.getModelByAgentId(agentId);
+
+      expect(model).toBeUndefined();
+    });
+
+    it('should handle corrupted projects.json gracefully', async () => {
+      const pm = new ProjectManager(TEST_PROJECTS_FILE);
+
+      // Write corrupted JSON
+      await writeFile(TEST_PROJECTS_FILE, '{ invalid json }', 'utf-8');
+
+      const model = await pm.getModelByAgentId(agentId);
+
+      expect(model).toBeUndefined();
     });
   });
 });

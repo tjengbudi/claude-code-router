@@ -6,6 +6,7 @@ export interface AgentConfig {
   name: string;            // Filename (e.g., "dev.md")
   relativePath: string;    // ".bmad/bmm/agents/dev.md"
   absolutePath: string;    // Full path to file
+  model?: string;          // Model assignment (e.g., "openai,gpt-4o") - Story 2.1
 }
 
 /**

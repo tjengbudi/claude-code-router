@@ -1,7 +1,7 @@
 import fs from 'fs/promises';
 import path from 'path';
 import { validate as uuidValidate } from 'uuid';
-import { AGENT_ID_REGEX } from './constants';
+import { AGENT_ID_REGEX, MODEL_STRING_REGEX, API_KEY_PATTERNS } from './constants';
 import type { ProjectsData } from './types/agent';
 
 /**
@@ -65,5 +65,57 @@ export class Validators {
       projects !== null &&
       !Array.isArray(projects)
     );
+  }
+
+  /**
+   * Validate model string format - Story 2.1
+   * Model string format: "provider,modelname" (e.g., "openai,gpt-4o")
+   * Rejects strings that look like API keys (security: NFR-S1)
+   * @param model - Model string to validate
+   * @returns true if model string matches expected format and is not an API key
+   */
+  static isValidModelString(model: string): boolean {
+    // Must be a string
+    if (typeof model !== 'string') {
+      return false;
+    }
+
+    // Must match the expected format: "provider,modelname"
+    if (!MODEL_STRING_REGEX.test(model)) {
+      return false;
+    }
+
+    // Split into provider and model name
+    const parts = model.split(',');
+    if (parts.length !== 2) {
+      return false;
+    }
+
+    const [provider, modelName] = parts;
+
+    // Security: Reject if either part looks like an API key (AC: 5)
+    for (const pattern of API_KEY_PATTERNS) {
+      if (pattern.test(provider) || pattern.test(modelName)) {
+        return false;
+      }
+    }
+
+    // Additional checks: reject common API key patterns not caught by regex
+    // - Contains "key" keyword
+    // - Very long strings (likely API keys)
+    // - Suspiciously short strings (likely invalid)
+    const lowerModel = model.toLowerCase();
+    if (
+      lowerModel.includes('key') ||
+      lowerModel.includes('secret') ||
+      provider.length < 2 ||   // Provider name too short (e.g., "a")
+      modelName.length < 2 ||   // Model name too short (e.g., "b")
+      provider.length > 50 ||   // Provider names shouldn't be this long
+      modelName.length > 100    // Model names shouldn't be this long
+    ) {
+      return false;
+    }
+
+    return true;
   }
 }
