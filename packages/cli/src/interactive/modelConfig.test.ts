@@ -5,7 +5,7 @@
 
 import { describe, test, expect, beforeEach, jest } from '@jest/globals';
 import { select, confirm } from '@inquirer/prompts';
-import { getAvailableModels } from './modelConfig';
+import { getAvailableModels, ACTION_DONE, ACTION_CANCEL, VALUE_DEFAULT } from './modelConfig';
 
 // Mock the prompts
 jest.mock('@inquirer/prompts');
@@ -19,15 +19,11 @@ describe('Interactive Model Configuration (Story 2.2)', () => {
 
   describe('getAvailableModels', () => {
     test('should load models from config.json when available', async () => {
-      // This test assumes config.json exists with Providers
-      // In actual test environment, we'd need to mock fs.readFile
       const models = await getAvailableModels();
 
-      // Should return at least default models
       expect(Array.isArray(models)).toBe(true);
       expect(models.length).toBeGreaterThan(0);
 
-      // Each model should have value and label
       models.forEach(model => {
         expect(model).toHaveProperty('value');
         expect(model).toHaveProperty('label');
@@ -39,17 +35,15 @@ describe('Interactive Model Configuration (Story 2.2)', () => {
     test('should include provider,model format in values', async () => {
       const models = await getAvailableModels();
 
-      // Check that at least one model has the expected format
       const hasCorrectFormat = models.some(m =>
-        m.value.includes(',') && !m.value.includes('default')
+        m.value.includes(',') && !m.value.includes(VALUE_DEFAULT)
       );
       expect(hasCorrectFormat).toBe(true);
     });
 
-    test('should return models with correct descriptions (LOW-2 fix)', async () => {
+    test('should return models with correct descriptions', async () => {
       const models = await getAvailableModels();
 
-      // Verify specific models have expected descriptions
       const gpt4oModel = models.find(m => m.value === 'openai,gpt-4o');
       if (gpt4oModel) {
         expect(gpt4oModel.label).toContain('powerful for coding');
@@ -67,11 +61,18 @@ describe('Interactive Model Configuration (Story 2.2)', () => {
       const models = await getAvailableModels();
 
       models.forEach(model => {
-        if (model.value !== 'default') {
-          // Should match pattern: provider,modelname
+        if (model.value !== VALUE_DEFAULT) {
           expect(model.value).toMatch(/^[a-z0-9_-]+,[a-z0-9_./-]+$/i);
         }
       });
+    });
+  });
+
+  describe('Constants export (HIGH-3 fix)', () => {
+    test('should export action constants', () => {
+      expect(ACTION_DONE).toBe('DONE');
+      expect(ACTION_CANCEL).toBe('CANCEL');
+      expect(VALUE_DEFAULT).toBe('default');
     });
   });
 });

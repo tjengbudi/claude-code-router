@@ -13,6 +13,11 @@ const GREEN = "\x1B[32m";
 const YELLOW = "\x1B[33m";
 const RED = "\x1B[31m";
 
+// Special action values for agent selection (HIGH-3: centralized constants)
+export const ACTION_DONE = 'DONE';
+export const ACTION_CANCEL = 'CANCEL';
+export const VALUE_DEFAULT = 'default';
+
 /**
  * Model option interface for interactive selection
  */
@@ -162,7 +167,21 @@ function getDefaultModels(): ModelOption[] {
 
 /**
  * Interactive model configuration for a project
- * @param projectId - UUID of the project to configure
+ * Allows users to assign models to agents via CLI prompts
+ *
+ * @param projectId - UUID v4 of the project to configure
+ * @returns Promise that resolves when configuration is complete
+ *
+ * @throws {Error} If project ID is invalid UUID format
+ * @throws {Error} If project is not found in projects.json
+ *
+ * Workflow:
+ * 1. Validates project ID and loads project
+ * 2. Presents agent selection with current model display
+ * 3. For each agent: presents model selection from config.json
+ * 4. Tracks changes in memory (ConfigurationSession)
+ * 5. On "Done": saves all changes atomically
+ * 6. On "Cancel" or Ctrl+C: discards all changes
  */
 export async function interactiveModelConfiguration(projectId: string): Promise<void> {
   const pm = new ProjectManager(PROJECTS_FILE);
@@ -197,16 +216,16 @@ export async function interactiveModelConfiguration(projectId: string): Promise<
   let configuring = true;
   while (configuring) {
     try {
-      // Build agent selection choices
+      // Build agent selection choices without ANSI codes in choice names (MED-1 fix)
       const agentChoices = project.agents.map(agent => ({
         value: agent.id,
-        name: `${agent.name} → ${agent.model ? `${CYAN}${agent.model}${RESET}` : `${DIM}[not configured]${RESET}`}`
+        name: `${agent.name} → ${agent.model || '[not configured]'}`
       }));
 
       // Add special options
       agentChoices.push(
-        { value: 'DONE', name: `${GREEN}[Done - Save changes]${RESET}` },
-        { value: 'CANCEL', name: `${RED}[Cancel]${RESET}` }
+        { value: ACTION_DONE, name: '[Done - Save changes]' },
+        { value: ACTION_CANCEL, name: '[Cancel]' }
       );
 
       // Agent selection prompt
@@ -216,12 +235,12 @@ export async function interactiveModelConfiguration(projectId: string): Promise<
       });
 
       // Handle special options
-      if (selectedAgentId === 'CANCEL') {
+      if (selectedAgentId === ACTION_CANCEL) {
         console.log(`${YELLOW}\nConfiguration cancelled, no changes saved${RESET}`);
         return;
       }
 
-      if (selectedAgentId === 'DONE') {
+      if (selectedAgentId === ACTION_DONE) {
         configuring = false;
         break;
       }
@@ -240,19 +259,21 @@ export async function interactiveModelConfiguration(projectId: string): Promise<
         name: m.label
       }));
       modelChoices.push({
-        value: 'default',
-        name: `${DIM}[Use Router.default]${RESET}`
+        value: VALUE_DEFAULT,
+        name: '[Use Router.default]'
       });
 
-      // Model selection prompt
+      // Model selection prompt - fix default selection (HIGH-2 fix)
+      // Default should match the actual choice value, not fall back to 'default' string
+      const defaultModel = agent.model || VALUE_DEFAULT;
       const selectedModel = await select({
         message: `Select model for ${agent.name}:`,
         choices: modelChoices,
-        default: agent.model || 'default'
+        default: defaultModel
       });
 
       // Validate selection before storing (HIGH-4 fix)
-      const actualModel = selectedModel === 'default' ? undefined : selectedModel;
+      const actualModel = selectedModel === VALUE_DEFAULT ? undefined : selectedModel;
       if (actualModel !== undefined && !Validators.isValidModelString(actualModel)) {
         console.error(`${RED}✗ Error: Invalid model format: ${actualModel}${RESET}`);
         console.log(`${DIM}  Model must be in format: provider,modelname${RESET}`);
@@ -262,11 +283,11 @@ export async function interactiveModelConfiguration(projectId: string): Promise<
       // Track the change
       session.addChange(agent.id, agent.name, agent.model, actualModel);
 
-      // Update in-memory project state for display
+      // Update in-memory cloned agent state for display
       agent.model = actualModel;
 
       // Show confirmation
-      const modelDisplay = actualModel || `${CYAN}[default]${RESET}`;
+      const modelDisplay = actualModel || '[default]';
       console.log(`${GREEN}✓ ${agent.name} → ${modelDisplay}${RESET}`);
 
       // Ask if user wants to configure another agent
@@ -293,13 +314,16 @@ export async function interactiveModelConfiguration(projectId: string): Promise<
   if (session.getCount() > 0) {
     try {
       await session.save(projectId);
+      const savedCount = session.getSavedCount();
       console.log(`${GREEN}\n✓ Configuration complete!${RESET}`);
-      console.log(`\nConfigured ${session.getSavedCount()} agent(s):`);
+      console.log(`\nConfigured ${savedCount} agent${savedCount === 1 ? '' : 's'}:`);
       for (const line of session.getSummary()) {
         console.log(`${DIM}${line}${RESET}`);
       }
     } catch (error) {
-      console.error(`${RED}✗ Error saving configuration: ${(error as Error).message}${RESET}`);
+      const errorMsg = (error as Error).message;
+      console.error(`${RED}✗ Error saving configuration: ${errorMsg}${RESET}`);
+      console.error(`${DIM}  ${session.getCount()} agent(s) configured but not saved${RESET}`);
       process.exit(1);
     }
   } else {
