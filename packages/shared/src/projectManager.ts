@@ -3,7 +3,7 @@ import path from 'path';
 import { v4 as uuidv4, validate as uuidValidate } from 'uuid';
 import JSON5 from 'json5';
 import { glob } from 'glob';
-import type { ProjectConfig, ProjectsData, AgentConfig } from './types/agent';
+import type { ProjectConfig, ProjectsData, AgentConfig, RescanResult } from './types/agent';
 import { AGENT_ID_REGEX } from './constants';
 import { Validators } from './validation';
 
@@ -330,5 +330,134 @@ export class ProjectManager {
       console.debug(`Failed to list projects: ${(error as Error).message}`);
       return undefined;
     }
+  }
+
+  /**
+   * Get a project by ID (Story 1.4 helper)
+   * @param projectId - UUID of the project
+   * @returns ProjectConfig or undefined if not found
+   */
+  async getProject(projectId: string): Promise<ProjectConfig | undefined> {
+    const data = await this.loadProjects();
+    return data.projects[projectId];
+  }
+
+  /**
+   * Rescan project to detect new or deleted agents (Story 1.4)
+   * Compares filesystem agents with projects.json entries and updates accordingly
+   * @param projectId - UUID of the project to rescan
+   * @returns RescanResult with detected changes
+   * @throws Error if project ID is invalid or project not found
+   */
+  async rescanProject(projectId: string): Promise<RescanResult> {
+    // AC4: Validate project ID using Validators.isValidAgentId()
+    if (!Validators.isValidAgentId(projectId)) {
+      throw new Error(`Invalid project ID: ${projectId}`);
+    }
+
+    // Load project from projects.json
+    const data = await this.loadProjects();
+    const project = data.projects[projectId];
+
+    if (!project) {
+      throw new Error(`Project not found: ${projectId}`);
+    }
+
+    // Scan filesystem for current agent files
+    const agentDir = path.join(project.path, '.bmad', 'bmm', 'agents');
+    let filesystemAgentFiles: string[];
+
+    try {
+      const agentsPattern = path.join(agentDir, '*.md');
+      filesystemAgentFiles = await glob(agentsPattern, { windowsPathsNoEscape: true });
+    } catch (error) {
+      // If glob fails (permission issues, etc.), return no changes
+      if ((error as NodeJS.ErrnoException).code === 'EACCES' || (error as NodeJS.ErrnoException).code === 'EPERM') {
+        console.warn(`Warning: Permission denied accessing agent directory: ${agentDir}`);
+      }
+      filesystemAgentFiles = [];
+    }
+
+    // Extract agent filenames from filesystem
+    const filesystemAgentNames = new Set(
+      filesystemAgentFiles.map(f => path.basename(f))
+    );
+
+    // Extract agent names from projects.json
+    const currentAgentNames = new Set(
+      project.agents.map(a => a.name)
+    );
+
+    // AC1: Detect new agents (in filesystem, not in projects.json)
+    const newAgents = [...filesystemAgentNames].filter(
+      name => !currentAgentNames.has(name)
+    );
+
+    // AC2: Detect deleted agents (in projects.json, not in filesystem)
+    const deletedAgents = project.agents.filter(
+      agent => !filesystemAgentNames.has(agent.name)
+    );
+
+    // Track agents that failed to process
+    const failedAgents: string[] = [];
+
+    // Process new agents: inject UUID and add to project
+    for (const filename of newAgents) {
+      const agentPath = path.join(agentDir, filename);
+      try {
+        // Reuse existing injectAgentId pattern
+        const agentId = await this.injectAgentId(agentPath);
+
+        // Check for duplicates before adding (prevent race conditions)
+        const exists = project.agents.some(a => a.id === agentId || a.name === filename);
+        if (exists) {
+          console.warn(`Warning: Agent ${filename} (${agentId}) already exists, skipping`);
+          continue;
+        }
+
+        // Add to project's agents array
+        project.agents.push({
+          id: agentId,
+          name: filename,
+          relativePath: path.relative(project.path, agentPath),
+          absolutePath: agentPath,
+        });
+
+        console.info(`✓ New agent discovered: ${filename}`);
+      } catch (error) {
+        // Log error but continue processing other agents
+        const errorMsg = (error as Error).message;
+        console.warn(`Warning: Failed to process new agent ${filename}: ${errorMsg}`);
+        failedAgents.push(filename);
+      }
+    }
+
+    // AC2: Remove deleted agents from project
+    for (const deletedAgent of deletedAgents) {
+      const index = project.agents.findIndex(a => a.id === deletedAgent.id);
+      if (index >= 0) {
+        project.agents.splice(index, 1);
+        console.info(`ℹ Removed deleted agent: ${deletedAgent.name} (${deletedAgent.id})`);
+      }
+    }
+
+    // Update timestamp
+    project.updatedAt = new Date().toISOString();
+
+    // AC5: Validate schema before saving
+    if (!Validators.isValidProjectsData(data)) {
+      throw new Error('Invalid projects data structure detected before save');
+    }
+
+    // AC5: Save updated projects.json using atomic write pattern
+    await this.saveProjects(data);
+
+    // Return result with detected changes
+    return {
+      newAgents,
+      deletedAgents,
+      failedAgents,
+      totalAgents: project.agents.length,
+    } as RescanResult;
   }
 }

@@ -35,3 +35,14 @@ export interface ProjectConfig {
 export interface ProjectsData {
   projects: Record<string, ProjectConfig>;
 }
+
+/**
+ * Rescan result interface (Story 1.4)
+ * Returns detected changes during project rescan
+ */
+export interface RescanResult {
+  newAgents: string[];      // Names of new agents discovered
+  deletedAgents: AgentConfig[];  // Agents that were deleted from filesystem
+  failedAgents: string[];   // Names of agents that failed to process
+  totalAgents: number;       // Total agent count after rescan
+}

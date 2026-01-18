@@ -1,5 +1,6 @@
 import { ProjectManager, Validators, PROJECTS_FILE } from '@CCR/shared';
 import path from 'path';
+import type { RescanResult } from '@CCR/shared';
 
 /**
  * Handle project commands
@@ -13,6 +14,7 @@ export async function handleProjectCommand(args: string[]): Promise<void> {
     console.log('\nCommands:');
     console.log('  add <path>   Register a new project');
     console.log('  list         List all registered projects');
+    console.log('  scan <id>    Rescan project for new or deleted agents');
     return;
   }
 
@@ -23,9 +25,12 @@ export async function handleProjectCommand(args: string[]): Promise<void> {
     case 'list':
       await handleProjectList();
       break;
+    case 'scan':
+      await handleProjectScan(args.slice(1));
+      break;
     default:
       console.error(`Unknown project command: ${subCommand}`);
-      console.error('Available commands: add, list');
+      console.error('Available commands: add, list, scan');
       process.exit(1);
   }
 }
@@ -116,3 +121,70 @@ async function handleProjectList(): Promise<void> {
     console.log(''); // Separator between projects (AC#5)
   });
 }
+
+/**
+ * Handle 'project scan' command (Story 1.4: Rescan project for new or deleted agents)
+ * @param args - Command arguments (e.g., ['<project-id>'])
+ */
+async function handleProjectScan(args: string[]): Promise<void> {
+  const projectId = args[0];
+
+  if (!projectId) {
+    console.error('✗ Error: Project ID required');
+    console.error('\nUsage: ccr project scan <project-id>');
+    console.error('\nList projects: ccr project list');
+    process.exit(1);
+  }
+
+  const pm = new ProjectManager(PROJECTS_FILE);
+
+  try {
+    // AC4: Validate project ID format before processing
+    if (!Validators.isValidAgentId(projectId)) {
+      console.error(`✗ Error: Invalid project ID: ${projectId}`);
+      console.error('\nProject ID must be a valid UUID v4 format');
+      console.error('List available projects: ccr project list');
+      process.exit(1);
+    }
+
+    // Call rescanProject method
+    const result: RescanResult = await pm.rescanProject(projectId);
+
+    // AC3: Display scan summary
+    if (result.newAgents.length === 0 && result.deletedAgents.length === 0 && result.failedAgents.length === 0) {
+      console.log('✓ No changes detected. All agents up to date.');
+    } else {
+      console.log('\n✓ Project rescan complete:\n');
+
+      if (result.newAgents.length > 0) {
+        console.log(`  Found ${result.newAgents.length} new agent(s):`);
+        result.newAgents.forEach(name => console.log(`  ├─ ${name}`));
+        if (result.deletedAgents.length > 0 || result.failedAgents.length > 0) {
+          console.log('');
+        }
+      }
+
+      if (result.deletedAgents.length > 0) {
+        console.log(`  Removed ${result.deletedAgents.length} deleted agent(s):`);
+        result.deletedAgents.forEach(agent => console.log(`  ├─ ${agent.name}`));
+        if (result.failedAgents.length > 0) {
+          console.log('');
+        }
+      }
+
+      if (result.failedAgents.length > 0) {
+        console.log(`  ${result.failedAgents.length} agent(s) failed to process:`);
+        result.failedAgents.forEach(name => console.log(`  ├─ ${name}`));
+      }
+
+      console.log(`\n  Total agents: ${result.totalAgents}`);
+    }
+  } catch (error) {
+    console.error(`✗ Error: ${(error as Error).message}`);
+
+    if ((error as Error).message.includes('Invalid project ID')) {
+      console.log('\nList available projects: ccr project list');
+    }
+  }
+}
+

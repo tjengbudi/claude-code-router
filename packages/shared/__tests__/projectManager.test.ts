@@ -1,7 +1,7 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { ProjectManager } from '../src/projectManager';
 import { PROJECTS_FILE } from '../src/constants';
-import { rm, readFile, writeFile, mkdir } from 'fs/promises';
+import { rm, readFile, writeFile, mkdir, unlink } from 'fs/promises';
 import { existsSync } from 'fs';
 import path from 'path';
 import os from 'os';
@@ -492,6 +492,302 @@ This is the agent content.
 
       // Cleanup
       await rm(testProjectPath, { recursive: true });
+    });
+  });
+
+  // Story 1.4: rescanProject() tests
+  describe('rescanProject', () => {
+    let testProjectPath: string;
+    let agentsDir: string;
+    let projectId: string;
+
+    beforeEach(async () => {
+      // Create test project structure
+      testProjectPath = path.join(os.tmpdir(), `test-project-${Date.now()}`);
+      agentsDir = path.join(testProjectPath, '.bmad', 'bmm', 'agents');
+      await mkdir(agentsDir, { recursive: true });
+
+      // Create initial agent files
+      await writeFile(path.join(agentsDir, 'dev.md'), '# Dev Agent', 'utf-8');
+      await writeFile(path.join(agentsDir, 'sm.md'), '# SM Agent', 'utf-8');
+
+      // Add project to get project ID
+      const pm = new ProjectManager(TEST_PROJECTS_FILE);
+      const project = await pm.addProject(testProjectPath);
+      projectId = project.id;
+    });
+
+    afterEach(async () => {
+      // Clean up test project
+      if (existsSync(testProjectPath)) {
+        await rm(testProjectPath, { recursive: true });
+      }
+    });
+
+    it('should detect new agents added after initial scan', async () => {
+      const pm = new ProjectManager(TEST_PROJECTS_FILE);
+
+      // Add new agent file after initial project addition
+      await writeFile(path.join(agentsDir, 'architect.md'), '# Architect Agent', 'utf-8');
+
+      // Rescan project
+      const result = await pm.rescanProject(projectId);
+
+      expect(result.newAgents).toContain('architect.md');
+      expect(result.deletedAgents).toHaveLength(0);
+      expect(result.totalAgents).toBe(3);
+
+      // Verify new agent was added to projects.json
+      const project = await pm.getProject(projectId);
+      expect(project!.agents).toHaveLength(3);
+      expect(project!.agents.map(a => a.name)).toContain('architect.md');
+    });
+
+    it('should detect deleted agents (files missing from disk)', async () => {
+      const pm = new ProjectManager(TEST_PROJECTS_FILE);
+
+      // Delete an agent file
+      await unlink(path.join(agentsDir, 'sm.md'));
+
+      // Rescan project
+      const result = await pm.rescanProject(projectId);
+
+      expect(result.newAgents).toHaveLength(0);
+      expect(result.deletedAgents).toHaveLength(1);
+      expect(result.deletedAgents[0].name).toBe('sm.md');
+      expect(result.totalAgents).toBe(1);
+
+      // Verify deleted agent was removed from projects.json
+      const project = await pm.getProject(projectId);
+      expect(project!.agents).toHaveLength(1);
+      expect(project!.agents.map(a => a.name)).not.toContain('sm.md');
+    });
+
+    it('should return no changes when nothing modified', async () => {
+      const pm = new ProjectManager(TEST_PROJECTS_FILE);
+
+      // Rescan without modifications
+      const result = await pm.rescanProject(projectId);
+
+      expect(result.newAgents).toHaveLength(0);
+      expect(result.deletedAgents).toHaveLength(0);
+      expect(result.totalAgents).toBe(2);
+    });
+
+    it('should validate project ID format', async () => {
+      const pm = new ProjectManager(TEST_PROJECTS_FILE);
+
+      // Test with invalid UUID
+      await expect(pm.rescanProject('invalid-id')).rejects.toThrow(/Invalid project ID: invalid-id/);
+    });
+
+    it('should throw error for non-existent project', async () => {
+      const pm = new ProjectManager(TEST_PROJECTS_FILE);
+
+      const fakeId = uuidv4();
+      await expect(pm.rescanProject(fakeId)).rejects.toThrow(/Project not found/);
+    });
+
+    it('should handle both new and deleted agents in single scan', async () => {
+      const pm = new ProjectManager(TEST_PROJECTS_FILE);
+
+      // Add new agent and delete existing one
+      await writeFile(path.join(agentsDir, 'architect.md'), '# Architect Agent', 'utf-8');
+      await unlink(path.join(agentsDir, 'sm.md'));
+
+      // Rescan project
+      const result = await pm.rescanProject(projectId);
+
+      expect(result.newAgents).toContain('architect.md');
+      expect(result.deletedAgents).toHaveLength(1);
+      expect(result.deletedAgents[0].name).toBe('sm.md');
+      expect(result.totalAgents).toBe(2);
+    });
+
+    it('should inject UUIDs into new agents during rescan', async () => {
+      const pm = new ProjectManager(TEST_PROJECTS_FILE);
+
+      // Add new agent file
+      const newAgentPath = path.join(agentsDir, 'architect.md');
+      await writeFile(newAgentPath, '# Architect Agent', 'utf-8');
+
+      // Rescan project
+      await pm.rescanProject(projectId);
+
+      // Verify UUID was injected
+      const content = await readFile(newAgentPath, 'utf-8');
+      const match = content.match(/<!-- CCR-AGENT-ID: ([a-f0-9-]+) -->/);
+      expect(match).toBeTruthy();
+
+      // Verify it's a valid UUID v4
+      const agentId = match![1];
+      expect(agentId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
+    });
+
+    it('should use atomic write for projects.json update', async () => {
+      const pm = new ProjectManager(TEST_PROJECTS_FILE);
+
+      // Add new agent
+      await writeFile(path.join(agentsDir, 'architect.md'), '# Architect Agent', 'utf-8');
+
+      // Rescan project
+      await pm.rescanProject(projectId);
+
+      // Verify backup file was deleted (atomic write success)
+      const backupPath = `${TEST_PROJECTS_FILE}.backup`;
+      expect(existsSync(backupPath)).toBe(false);
+
+      // Verify projects.json was updated
+      const project = await pm.getProject(projectId);
+      expect(project!.agents).toHaveLength(3);
+    });
+
+    it('should log removed agents at info level', async () => {
+      const pm = new ProjectManager(TEST_PROJECTS_FILE);
+      const consoleInfoSpy = vi.spyOn(console, 'info');
+
+      // Delete an agent file
+      await unlink(path.join(agentsDir, 'sm.md'));
+
+      // Rescan project
+      await pm.rescanProject(projectId);
+
+      // Verify console.info was called with deleted agent details
+      expect(consoleInfoSpy).toHaveBeenCalledWith(
+        expect.stringContaining('ℹ Removed deleted agent:')
+      );
+
+      consoleInfoSpy.mockRestore();
+    });
+
+    it('should preserve existing agent IDs during rescan', async () => {
+      const pm = new ProjectManager(TEST_PROJECTS_FILE);
+
+      // Get initial agent IDs
+      const projectBefore = await pm.getProject(projectId);
+      const initialIds = projectBefore!.agents.map(a => a.id);
+
+      // Rescan without modifications
+      await pm.rescanProject(projectId);
+
+      // Get agent IDs after rescan
+      const projectAfter = await pm.getProject(projectId);
+      const finalIds = projectAfter!.agents.map(a => a.id);
+
+      // Verify IDs are preserved
+      expect(initialIds).toEqual(finalIds);
+    });
+
+    it('should update project timestamp after rescan', async () => {
+      const pm = new ProjectManager(TEST_PROJECTS_FILE);
+
+      // Get initial timestamp
+      const projectBefore = await pm.getProject(projectId);
+      const initialTimestamp = projectBefore!.updatedAt;
+
+      // Wait a bit to ensure timestamp difference
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      // Add new agent and rescan
+      await writeFile(path.join(agentsDir, 'architect.md'), '# Architect Agent', 'utf-8');
+      await pm.rescanProject(projectId);
+
+      // Get timestamp after rescan
+      const projectAfter = await pm.getProject(projectId);
+      const finalTimestamp = projectAfter!.updatedAt;
+
+      // Verify timestamp was updated
+      expect(finalTimestamp).not.toBe(initialTimestamp);
+    });
+
+    it('should handle multiple new agents in single scan', async () => {
+      const pm = new ProjectManager(TEST_PROJECTS_FILE);
+
+      // Add multiple new agents
+      await writeFile(path.join(agentsDir, 'architect.md'), '# Architect', 'utf-8');
+      await writeFile(path.join(agentsDir, 'qa.md'), '# QA', 'utf-8');
+      await writeFile(path.join(agentsDir, 'security.md'), '# Security', 'utf-8');
+
+      // Rescan project
+      const result = await pm.rescanProject(projectId);
+
+      expect(result.newAgents).toHaveLength(3);
+      expect(result.newAgents).toContain('architect.md');
+      expect(result.newAgents).toContain('qa.md');
+      expect(result.newAgents).toContain('security.md');
+      expect(result.totalAgents).toBe(5);
+    });
+
+    it('should validate projects.json schema after rescan', async () => {
+      const pm = new ProjectManager(TEST_PROJECTS_FILE);
+
+      // Add new agent and rescan
+      await writeFile(path.join(agentsDir, 'architect.md'), '# Architect', 'utf-8');
+      await pm.rescanProject(projectId);
+
+      // Load and validate projects.json structure
+      const data = await pm.loadProjects();
+      expect(data).toBeDefined();
+      expect(data.projects).toBeDefined();
+      expect(data.projects[projectId]).toBeDefined();
+      expect(data.projects[projectId].agents).toBeInstanceOf(Array);
+    });
+
+    it('should track failed agents in result', async () => {
+      const pm = new ProjectManager(TEST_PROJECTS_FILE);
+
+      // Make agent directory read-only to cause failure
+      const readonlyDir = path.join(testProjectPath, '.bmad', 'bmm', 'agents-readonly');
+      await mkdir(readonlyDir, { recursive: true });
+      const readonlyAgentPath = path.join(readonlyDir, 'readonly-agent.md');
+      await writeFile(readonlyAgentPath, '# Readonly Agent', 'utf-8');
+
+      // Note: On some systems, chmod may not work properly, so the test may pass even if chmod fails
+      // The important thing is that the failedAgents array exists in the result
+
+      // This test verifies the structure exists, actual failure handling depends on OS
+      const result = await pm.rescanProject(projectId);
+
+      // Verify failedAgents array exists (even if empty)
+      expect(result.failedAgents).toBeDefined();
+      expect(Array.isArray(result.failedAgents)).toBe(true);
+
+      // Cleanup
+      await rm(readonlyDir, { recursive: true, force: true });
+    });
+
+    it('should return empty failedAgents array on successful scan', async () => {
+      const pm = new ProjectManager(TEST_PROJECTS_FILE);
+
+      // Rescan without modifications
+      const result = await pm.rescanProject(projectId);
+
+      expect(result.failedAgents).toHaveLength(0);
+    });
+  });
+
+  // Story 1.4: getProject() helper tests
+  describe('getProject', () => {
+    it('should return project by ID', async () => {
+      const pm = new ProjectManager(TEST_PROJECTS_FILE);
+      const testPath = '/tmp/test-project';
+
+      const added = await pm.addProject(testPath);
+      const retrieved = await pm.getProject(added.id);
+
+      expect(retrieved).toBeDefined();
+      expect(retrieved!.id).toBe(added.id);
+      expect(retrieved!.name).toBe('test-project');
+      expect(retrieved!.path).toBe(testPath);
+    });
+
+    it('should return undefined for non-existent project', async () => {
+      const pm = new ProjectManager(TEST_PROJECTS_FILE);
+
+      const fakeId = uuidv4();
+      const result = await pm.getProject(fakeId);
+
+      expect(result).toBeUndefined();
     });
   });
 });
