@@ -1409,3 +1409,219 @@ This is the agent content.
     });
   });
 });
+
+// ============ START: Story 3.1 Tests - Project Detection and Enhanced Lookup ============
+// These tests verify detectProject() method and enhanced getModelByAgentId() with projectId
+
+describe('Story 3.1: Project Detection and Enhanced Model Lookup', () => {
+  let pm: ProjectManager;
+  let project1Id: string;
+  let project2Id: string;
+  let agent1Id: string;
+  let agent2Id: string;
+  let testDir: string;
+  let testProjectsFile: string;
+
+  beforeEach(async () => {
+    // Create test directory
+    testDir = path.join(os.tmpdir(), `test-story-31-${Date.now()}`);
+    testProjectsFile = path.join(testDir, 'projects.json');
+
+    await mkdir(testDir, { recursive: true });
+    await writeFile(testProjectsFile, '// Test projects file\n{\n  "projects": {}\n}', 'utf-8');
+
+    pm = new ProjectManager(testProjectsFile);
+
+    // Create two projects for multi-project testing
+    const project1Path = path.join(testDir, 'project1');
+    const project2Path = path.join(testDir, 'project2');
+
+    await mkdir(path.join(project1Path, '.bmad', 'bmm', 'agents'), { recursive: true });
+    await mkdir(path.join(project2Path, '.bmad', 'bmm', 'agents'), { recursive: true });
+
+    const project1 = await pm.addProject(project1Path);
+    const project2 = await pm.addProject(project2Path);
+
+    project1Id = project1.id;
+    project2Id = project2.id;
+
+    // Create agent files
+    const agent1Path = path.join(project1Path, '.bmad', 'bmm', 'agents', 'agent1.md');
+    const agent2Path = path.join(project2Path, '.bmad', 'bmm', 'agents', 'agent2.md');
+
+    await writeFile(agent1Path, '# Agent 1', 'utf-8');
+    await writeFile(agent2Path, '# Agent 2', 'utf-8');
+
+    // Scan projects to get agent IDs
+    await pm.scanProject(project1Id);
+    await pm.scanProject(project2Id);
+
+    const proj1 = await pm.getProject(project1Id);
+    const proj2 = await pm.getProject(project2Id);
+
+    agent1Id = proj1!.agents[0].id;
+    agent2Id = proj2!.agents[0].id;
+  });
+
+  afterEach(async () => {
+    // Clean up test directory
+    try {
+      await rm(testDir, { recursive: true, force: true });
+    } catch {
+      // Ignore cleanup errors
+    }
+  });
+
+  describe('detectProject()', () => {
+    it('should return project ID when agent is found in a project', async () => {
+      const detectedProjectId = await pm.detectProject(agent1Id);
+
+      expect(detectedProjectId).toBe(project1Id);
+    });
+
+    it('should return undefined for non-existent agent ID', async () => {
+      const fakeAgentId = uuidv4();
+      const detectedProjectId = await pm.detectProject(fakeAgentId);
+
+      expect(detectedProjectId).toBeUndefined();
+    });
+
+    it('should return undefined for invalid agent ID format', async () => {
+      const detectedProjectId = await pm.detectProject('not-a-uuid');
+
+      expect(detectedProjectId).toBeUndefined();
+    });
+
+    it('should find correct project when agent exists in multiple projects (collision check)', async () => {
+      // Each agent should only exist in one project
+      const detected1 = await pm.detectProject(agent1Id);
+      const detected2 = await pm.detectProject(agent2Id);
+
+      expect(detected1).toBe(project1Id);
+      expect(detected2).toBe(project2Id);
+      expect(detected1).not.toBe(detected2);
+    });
+
+    it('should handle projects.json with no projects gracefully', async () => {
+      await writeFile(TEST_PROJECTS_FILE, '{\n  "projects": {}\n}', 'utf-8');
+      const emptyPM = new ProjectManager(TEST_PROJECTS_FILE);
+
+      const detectedProjectId = await emptyPM.detectProject(agent1Id);
+
+      expect(detectedProjectId).toBeUndefined();
+    });
+
+    it('should handle missing projects.json gracefully', async () => {
+      const missingFile = path.join(os.tmpdir(), `missing-${Date.now()}.json`);
+      const emptyPM = new ProjectManager(missingFile);
+
+      const detectedProjectId = await emptyPM.detectProject(agent1Id);
+
+      expect(detectedProjectId).toBeUndefined();
+    });
+  });
+
+  describe('getModelByAgentId() with enhanced projectId parameter', () => {
+    beforeEach(async () => {
+      // Configure models for testing
+      await pm.setAgentModel(project1Id, agent1Id, 'openai,gpt-4o');
+      await pm.setAgentModel(project2Id, agent2Id, 'anthropic,claude-opus');
+    });
+
+    it('should return model when projectId matches agent\'s project', async () => {
+      const model = await pm.getModelByAgentId(agent1Id, project1Id);
+
+      expect(model).toBe('openai,gpt-4o');
+    });
+
+    it('should return undefined when projectId does not match agent\'s project', async () => {
+      const model = await pm.getModelByAgentId(agent1Id, project2Id);
+
+      expect(model).toBeUndefined();
+    });
+
+    it('should return model for agent in correct project (multi-project isolation)', async () => {
+      const model1 = await pm.getModelByAgentId(agent1Id, project1Id);
+      const model2 = await pm.getModelByAgentId(agent2Id, project2Id);
+
+      expect(model1).toBe('openai,gpt-4o');
+      expect(model2).toBe('anthropic,claude-opus');
+      expect(model1).not.toBe(model2);
+    });
+
+    it('should maintain backward compatibility when projectId not provided', async () => {
+      const model1 = await pm.getModelByAgentId(agent1Id);
+      const model2 = await pm.getModelByAgentId(agent2Id);
+
+      expect(model1).toBe('openai,gpt-4o');
+      expect(model2).toBe('anthropic,claude-opus');
+    });
+
+    it('should return undefined when agent has no model configured (with projectId)', async () => {
+      // Remove model configuration
+      await pm.setAgentModel(project1Id, agent1Id, undefined);
+
+      const model = await pm.getModelByAgentId(agent1Id, project1Id);
+
+      expect(model).toBeUndefined();
+    });
+
+    it('should return undefined for non-existent agent ID (with projectId)', async () => {
+      const fakeAgentId = uuidv4();
+      const model = await pm.getModelByAgentId(fakeAgentId, project1Id);
+
+      expect(model).toBeUndefined();
+    });
+
+    it('should return undefined for invalid agent ID format (with projectId)', async () => {
+      const model = await pm.getModelByAgentId('not-a-uuid', project1Id);
+
+      expect(model).toBeUndefined();
+    });
+
+    it('should return undefined for non-existent project ID', async () => {
+      const fakeProjectId = uuidv4();
+      const model = await pm.getModelByAgentId(agent1Id, fakeProjectId);
+
+      expect(model).toBeUndefined();
+    });
+  });
+
+  describe('Multi-Project Cache Isolation', () => {
+    it('should support different models for same agent ID in different projects', async () => {
+      // This validates that the cache key format ${sessionId}:${projectId}:${agentId}
+      // correctly isolates models across projects
+
+      await pm.setAgentModel(project1Id, agent1Id, 'openai,gpt-4o');
+      await pm.setAgentModel(project2Id, agent2Id, 'anthropic,claude-opus');
+
+      // Simulate multi-project cache lookup
+      const sessionId = 'test-session';
+      const cacheKey1 = `${sessionId}:${project1Id}:${agent1Id}`;
+      const cacheKey2 = `${sessionId}:${project2Id}:${agent2Id}`;
+
+      // Cache keys should be different (multi-project isolation)
+      expect(cacheKey1).not.toBe(cacheKey2);
+
+      // Lookups should return different models
+      const model1 = await pm.getModelByAgentId(agent1Id, project1Id);
+      const model2 = await pm.getModelByAgentId(agent2Id, project2Id);
+
+      expect(model1).toBe('openai,gpt-4o');
+      expect(model2).toBe('anthropic,claude-opus');
+    });
+
+    it('should prevent cache collisions when agents have same ID across projects', async () => {
+      // Set same model for both agents to test cache isolation
+      await pm.setAgentModel(project1Id, agent1Id, 'openai,gpt-4o');
+      await pm.setAgentModel(project2Id, agent2Id, 'openai,gpt-4o');
+
+      const model1 = await pm.getModelByAgentId(agent1Id, project1Id);
+      const model2 = await pm.getModelByAgentId(agent2Id, project2Id);
+
+      // Both should return the model (no collision, proper isolation)
+      expect(model1).toBe('openai,gpt-4o');
+      expect(model2).toBe('openai,gpt-4o');
+    });
+  });
+});

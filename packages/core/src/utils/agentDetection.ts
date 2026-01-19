@@ -11,6 +11,10 @@ export interface AgentDetectionRequest {
       role?: string;
       content: string | any[];
     }>;
+    metadata?: {
+      user_id?: string;
+      [key: string]: any;
+    };
     [key: string]: any;
   };
   [key: string]: any;
@@ -22,6 +26,26 @@ export interface Logger {
   info: (obj: object | string, msg?: string) => void;
   error: (obj: object | string, msg?: string) => void;
 }
+
+/**
+ * Extract session ID from Claude Code request - Story 3.1
+ * Extracts session ID from metadata.user_id format: "user_123_session_abc456"
+ * Used for session-based caching of agent model lookups
+ *
+ * @param req - Claude Code API request object
+ * @returns Session ID string, or 'default' if not found
+ *
+ * @performance < 1ms extraction time (simple string split)
+ */
+export const extractSessionId = (req: AgentDetectionRequest): string => {
+  if (req?.body?.metadata?.user_id) {
+    const parts = req.body.metadata.user_id.split("_session_");
+    if (parts.length > 1 && parts[1]?.trim()) {
+      return parts[1].trim();
+    }
+  }
+  return 'default';
+};
 
 /**
  * Extract agent ID from Claude Code request
@@ -73,6 +97,11 @@ export const extractAgentId = (req: AgentDetectionRequest, log?: Logger): string
   if (req.body.messages && Array.isArray(req.body.messages)) {
     for (const message of req.body.messages) {
       if (typeof message.content === 'string') {
+        // Optimization: Fast check before expensive regex (Story 3.1 Review Fix)
+        if (!message.content.includes('CCR-AGENT-ID')) {
+          continue;
+        }
+
         const match = message.content.match(/<!-- CCR-AGENT-ID: ([a-f0-9-]+) -->/);
         if (match) {
           const agentId = match[1];

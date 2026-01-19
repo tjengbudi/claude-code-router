@@ -96,7 +96,7 @@ export const calculateTokenCount = (
 };
 
 
-import { extractAgentId } from "./agentDetection";
+import { extractAgentId, extractSessionId } from "./agentDetection";
 
 const getProjectSpecificRouter = async (
   req: any,
@@ -207,19 +207,48 @@ const getUseModel = async (
     return { model: Router.think, scenarioType: 'think' };
   }
 
-  // ============ START: Agent System Integration (Story 2.3) ============
+  // ============ START: Agent System Integration (Story 2.3, enhanced for Story 3.1) ============
   // Priority 6.5: Agent-based routing (between "think model" and Router.default)
   // Story 2.3 AC: When agent has no model configured, fall back to Router.default
   // Story 2.5: Auto-registration for zero-config team onboarding
-  const agentId = extractAgentId(req, req.log);
-  if (agentId) {
-    try {
-      const agentModel = await projectManager.getModelByAgentId(agentId);
-      if (agentModel) {
-        // Agent has configured model - use it
-        req.log.debug({ agentId, model: agentModel }, 'Agent routing to configured model');
-        return { model: agentModel, scenarioType: 'default' };
-      } else {
+  // Story 3.1: Session-based caching and project detection for multi-project support
+
+  // Early exit optimization: Check for tag presence first (fast string search)
+  // This ensures non-BMM users have < 1ms overhead (NFR-P3)
+  const hasAgentTag = req.body.system?.[0]?.text?.includes('CCR-AGENT-ID');
+  if (hasAgentTag) {
+    const agentId = extractAgentId(req, req.log);
+    if (agentId) {
+      try {
+        // Story 3.1: Extract session ID for cache key
+        const sessionId = extractSessionId(req);
+
+        // Story 3.1: Detect project for this agent (multi-project support)
+        const projectId = await projectManager.detectProject(agentId);
+
+        if (projectId) {
+          // Story 3.1: Enhanced cache key with project context for multi-project isolation
+          const cacheKey = `${sessionId}:${projectId}:${agentId}`;
+
+          // Story 3.1: Check cache first (90%+ hit rate target per NFR-P2)
+          const cachedModel = sessionAgentModelCache.get(cacheKey);
+          if (cachedModel) {
+            req.log.debug({ cacheKey, model: cachedModel }, 'Agent model cache hit');
+            return { model: cachedModel, scenarioType: 'default' };
+          }
+
+          // Story 3.1: Cache miss - lookup with project context
+          const agentModel = await projectManager.getModelByAgentId(agentId, projectId);
+          if (agentModel) {
+            // Story 3.1: Store result in cache for subsequent requests
+            sessionAgentModelCache.set(cacheKey, agentModel);
+            req.log.debug({ cacheKey, model: agentModel }, 'Agent model cache miss, stored');
+            return { model: agentModel, scenarioType: 'default' };
+          }
+
+          // Agent found but no model configured
+          req.log.debug({ agentId, projectId }, 'Agent found in project but no model configured');
+        } else {
         // Story 2.5: Agent ID found but not registered - try auto-registration
         // Optimization: First check if agent is already registered but has no model
         // This avoids expensive filesystem scans for known agents
@@ -240,9 +269,13 @@ const getUseModel = async (
              if (registeredProject) {
                req.log.info({ agentId, projectId: registeredProject.id }, 'Project auto-registered successfully');
 
-               // Try to get model again after auto-registration
-               const agentModelAfterRegistration = await projectManager.getModelByAgentId(agentId);
+               // After registration, try again with enhanced caching
+               const newProjectId = registeredProject.id;
+               const newCacheKey = `${sessionId}:${newProjectId}:${agentId}`;
+
+               const agentModelAfterRegistration = await projectManager.getModelByAgentId(agentId, newProjectId);
                if (agentModelAfterRegistration) {
+                 sessionAgentModelCache.set(newCacheKey, agentModelAfterRegistration);
                  req.log.info({ agentId, model: agentModelAfterRegistration }, 'Agent using configured model after auto-registration');
                  return { model: agentModelAfterRegistration, scenarioType: 'default' };
                }
@@ -251,15 +284,16 @@ const getUseModel = async (
              req.log.debug({ agentId }, 'Agent file not found in Claude projects directory');
            }
         }
+      }
 
         // Agent exists (or auto-registration finished) but no model configured → use Router.default
         req.log.debug({ agentId }, 'Agent using Router.default (no model configured)');
         // Fall through to Router.default below
+      } catch (error) {
+        // Unexpected failure - log error and fallback to Router.default (graceful degradation)
+        req.log.error({ error: (error as Error).message, agentId }, 'Agent routing failed, using Router.default');
+        // Fall through to Router.default below
       }
-    } catch (error) {
-      // Unexpected failure - log error and fallback to Router.default (graceful degradation)
-      req.log.error({ error, agentId }, 'Agent routing failed, using Router.default');
-      // Fall through to Router.default below
     }
   }
   // ============ END: Agent System Integration ============
@@ -375,6 +409,13 @@ export const router = async (req: any, _res: any, context: RouterContext) => {
 // null value indicates previously searched but not found
 // Uses LRU cache with max 1000 entries
 const sessionProjectCache = new LRUCache<string, string>({
+  max: 1000,
+});
+
+// Story 3.1: Session-based LRU cache for agent model lookups
+// Cache key: ${sessionId}:${projectId}:${agentId}
+// Enables multi-project cache isolation and 90%+ hit rate (NFR-P2)
+const sessionAgentModelCache = new LRUCache<string, string>({
   max: 1000,
 });
 

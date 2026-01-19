@@ -1,5 +1,5 @@
 import { describe, it, test, expect, beforeEach, jest } from '@jest/globals';
-import { extractAgentId } from '../src/utils/agentDetection';
+import { extractAgentId, extractSessionId } from '../src/utils/agentDetection';
 
 // Mock logger for testing
 const mockLogger = {
@@ -374,5 +374,151 @@ describe('Story 2.3: Router.default Fallback', () => {
     const result = extractAgentId(req, mockLogger);
     expect(result).toBe(systemAgentId);
     // System prompt takes priority for consistent behavior
+  });
+});
+
+// ============ START: Story 3.1 Tests - Session-Based Caching ============
+// These tests verify session ID extraction and session-based caching functionality
+
+describe('Story 3.1: Session-Based Caching', () => {
+  describe('extractSessionId()', () => {
+    test('should extract session ID from metadata.user_id with _session_ delimiter', () => {
+      const req = {
+        body: {
+          metadata: {
+            user_id: 'user_123_session_abc456'
+          }
+        }
+      };
+
+      const result = extractSessionId(req);
+      expect(result).toBe('abc456');
+    });
+
+    test('should trim whitespace from extracted session ID', () => {
+      const req = {
+        body: {
+          metadata: {
+            user_id: 'user_123_session_  spaces  '
+          }
+        }
+      };
+
+      const result = extractSessionId(req);
+      expect(result).toBe('spaces');
+    });
+
+    test('should return default when no _session_ delimiter found', () => {
+      const req = {
+        body: {
+          metadata: {
+            user_id: 'user_123_without_session'
+          }
+        }
+      };
+
+      const result = extractSessionId(req);
+      expect(result).toBe('default');
+    });
+
+    test('should return default when metadata.user_id is missing', () => {
+      const req = {
+        body: {
+          metadata: {}
+        }
+      };
+
+      const result = extractSessionId(req);
+      expect(result).toBe('default');
+    });
+
+    test('should return default when metadata is missing', () => {
+      const req = {
+        body: {}
+      };
+
+      const result = extractSessionId(req);
+      expect(result).toBe('default');
+    });
+
+    test('should return default when body is missing', () => {
+      const req = {};
+
+      const result = extractSessionId(req);
+      expect(result).toBe('default');
+    });
+
+    test('should handle empty session ID after delimiter', () => {
+      const req = {
+        body: {
+          metadata: {
+            user_id: 'user_123_session_'
+          }
+        }
+      };
+
+      const result = extractSessionId(req);
+      expect(result).toBe('default');
+    });
+
+    test('should extract session ID with complex formats', () => {
+      const testCases = [
+        { input: 'user_123_session_session-id-123', expected: 'session-id-123' },
+        { input: 'user_abc_session_456', expected: '456' },
+        { input: 'client_001_session_session-001', expected: 'session-001' },
+      ];
+
+      for (const testCase of testCases) {
+        const req = {
+          body: {
+            metadata: {
+              user_id: testCase.input
+            }
+          }
+        };
+
+        const result = extractSessionId(req);
+        expect(result).toBe(testCase.expected);
+      }
+    });
+
+    test('should handle multiple _session_ occurrences (use first split)', () => {
+      const req = {
+        body: {
+          metadata: {
+            user_id: 'user_session_123_session_456'
+          }
+        }
+      };
+
+      const result = extractSessionId(req);
+      // Implementation splits by "_session_" which creates ["user", "123", "456"]
+      // Taking parts[1].trim() gives "123"
+      expect(result).toBe('123');
+    });
+  });
+
+  describe('Session ID Performance Requirements', () => {
+    test('should extract session ID in less than 1ms (NFR-P1 target)', () => {
+      const req = {
+        body: {
+          metadata: {
+            user_id: 'user_123_session_test-session'
+          }
+        }
+      };
+
+      const iterations = 1000;
+      const startTime = Date.now();
+
+      for (let i = 0; i < iterations; i++) {
+        extractSessionId(req);
+      }
+
+      const endTime = Date.now();
+      const avgTime = (endTime - startTime) / iterations;
+
+      expect(avgTime).toBeLessThan(1);
+    });
   });
 });

@@ -533,12 +533,43 @@ ${JSON5.stringify(dataWithVersion, { space: 2 })}`;
   }
 
   /**
-   * Get model configuration by agent ID - Story 2.1
+   * Detect which project contains a given agent ID - Story 3.1
+   * Used for multi-project cache isolation and agent lookup
+   * @param agentId - UUID of the agent
+   * @returns Project ID if found, undefined otherwise
+   */
+  async detectProject(agentId: string): Promise<string | undefined> {
+    // Validate agent ID format
+    if (!Validators.isValidAgentId(agentId)) {
+      console.debug(`Invalid agent ID format in detectProject: ${agentId}`);
+      return undefined;
+    }
+
+    // Load projects data
+    const data = await this.loadProjects();
+
+    // Search for agent across all projects to find its containing project
+    for (const [projectId, project] of Object.entries(data.projects)) {
+      const agent = project.agents.find(a => a.id === agentId);
+      if (agent) {
+        console.debug(`Agent ${agentId} found in project ${projectId}`);
+        return projectId;
+      }
+    }
+
+    // Agent not found - return undefined
+    console.debug(`Agent ${agentId} not found in any project`);
+    return undefined;
+  }
+
+  /**
+   * Get model configuration by agent ID - Story 2.1, enhanced for Story 3.1
    * Searches across all projects to find agent and return its model
    * @param agentId - UUID of the agent
+   * @param projectId - Optional project ID for multi-project support (Story 3.1)
    * @returns Model string if configured, undefined if not found or not set (Router.default fallback)
    */
-  async getModelByAgentId(agentId: string): Promise<string | undefined> {
+  async getModelByAgentId(agentId: string, projectId?: string): Promise<string | undefined> {
     // Validate agent ID format
     if (!Validators.isValidAgentId(agentId)) {
       console.debug(`Invalid agent ID format: ${agentId}`);
@@ -548,7 +579,25 @@ ${JSON5.stringify(dataWithVersion, { space: 2 })}`;
     // Load projects data
     const data = await this.loadProjects();
 
-    // Search for agent across all projects (O(n) search)
+    // Story 3.1: If projectId provided, use it directly (multi-project support)
+    if (projectId) {
+      const project = data.projects[projectId];
+      if (project) {
+        const agent = project.agents.find(a => a.id === agentId);
+        if (agent) {
+          if (agent.model) {
+            console.debug(`Found model for agent ${agentId} in project ${projectId}: ${agent.model}`);
+            return agent.model;
+          }
+          console.debug(`Agent ${agentId} found in project ${projectId} but no model configured`);
+          return undefined;
+        }
+      }
+      console.debug(`Project ${projectId} or agent ${agentId} not found`);
+      return undefined;
+    }
+
+    // Search for agent across all projects (O(n) search) - backward compatibility
     for (const project of Object.values(data.projects)) {
       const agent = project.agents.find(a => a.id === agentId);
       if (agent) {
