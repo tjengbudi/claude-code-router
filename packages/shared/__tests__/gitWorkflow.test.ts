@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from '@jest/globals';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { ProjectManager, Validators, PROJECTS_SCHEMA_VERSION } from '../src';
 import { rm, readFile, writeFile, mkdir } from 'fs/promises';
 import { existsSync } from 'fs';

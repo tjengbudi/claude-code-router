@@ -1,4 +1,4 @@
-import { describe, it, expect } from '@jest/globals';
+import { describe, it, expect } from 'vitest';
 import { Validators, PROJECTS_SCHEMA_VERSION } from '../src';
 
 describe('Schema Validation Unit Tests (Story 2.4)', () => {

@@ -1,4 +1,3 @@
-import { describe, it, expect, beforeEach, afterEach, jest } from '@jest/globals';
 import { ProjectManager } from '../src/projectManager';
 import { PROJECTS_FILE } from '../src/constants';
 import { rm, readFile, writeFile, mkdir, unlink } from 'fs/promises';
@@ -1034,6 +1033,379 @@ This is the agent content.
       const model = await pm.getModelByAgentId(agentId);
 
       expect(model).toBeUndefined();
+    });
+  });
+
+  // Story 2.5: Zero-Config Team Onboarding tests
+  describe('Story 2.5: autoRegisterFromAgentFile', () => {
+    let testProjectPath: string;
+    let agentsDir: string;
+    let agentPath: string;
+    let agentId: string;
+
+    beforeEach(async () => {
+      // Create test project structure
+      testProjectPath = path.join(os.tmpdir(), `test-project-auto-${Date.now()}`);
+      agentsDir = path.join(testProjectPath, '.bmad', 'bmm', 'agents');
+      await mkdir(agentsDir, { recursive: true });
+
+      // Create agent file with ID
+      agentId = uuidv4();
+      agentPath = path.join(agentsDir, 'dev.md');
+      await writeFile(agentPath, `# Dev Agent\n\n<!-- CCR-AGENT-ID: ${agentId} -->`, 'utf-8');
+    });
+
+    afterEach(async () => {
+      // Clean up test project
+      if (existsSync(testProjectPath)) {
+        await rm(testProjectPath, { recursive: true });
+      }
+    });
+
+    it('should extract project path from agent file path', async () => {
+      const pm = new ProjectManager(TEST_PROJECTS_FILE);
+
+      const result = await pm.autoRegisterFromAgentFile(agentPath);
+
+      expect(result).toBeDefined();
+      expect(result!.path).toBe(testProjectPath);
+      expect(result!.name).toBe(path.basename(testProjectPath));
+    });
+
+    it('should return undefined if project already registered', async () => {
+      const pm = new ProjectManager(TEST_PROJECTS_FILE);
+
+      // Register project first
+      await pm.addProject(testProjectPath);
+
+      // Try to auto-register again
+      const result = await pm.autoRegisterFromAgentFile(agentPath);
+
+      expect(result).toBeUndefined();
+    });
+
+    it('should merge in-repo projects.json into global', async () => {
+      const pm = new ProjectManager(TEST_PROJECTS_FILE);
+
+      // Create in-repo projects.json with agent model configuration
+      const inRepoProjectsJson = path.join(testProjectPath, 'projects.json');
+      const inRepoProjectId = uuidv4();
+      await writeFile(inRepoProjectsJson, JSON.stringify({
+        schemaVersion: '1.0.0',
+        projects: {
+          [inRepoProjectId]: {
+            id: inRepoProjectId,
+            name: 'in-repo-project',
+            path: testProjectPath,
+            agents: [{
+              id: agentId,
+              name: 'dev.md',
+              relativePath: '.bmad/bmm/agents/dev.md',
+              absolutePath: agentPath,
+              model: 'openai,gpt-4o'
+            }],
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+          }
+        }
+      }, null, 2), 'utf-8');
+
+      // Auto-register from agent file
+      const result = await pm.autoRegisterFromAgentFile(agentPath);
+
+      expect(result).toBeDefined();
+
+      // Verify model was merged from in-repo config
+      const model = await pm.getModelByAgentId(agentId);
+      expect(model).toBe('openai,gpt-4o');
+    });
+
+    it('should register project using standard flow if no in-repo projects.json', async () => {
+      const pm = new ProjectManager(TEST_PROJECTS_FILE);
+
+      // No in-repo projects.json created
+      const result = await pm.autoRegisterFromAgentFile(agentPath);
+
+      expect(result).toBeDefined();
+      expect(result!.agents).toHaveLength(1);
+      expect(result!.agents[0].id).toBe(agentId);
+    });
+
+    it('should throw error for invalid agent file path', async () => {
+      const pm = new ProjectManager(TEST_PROJECTS_FILE);
+
+      await expect(pm.autoRegisterFromAgentFile('')).rejects.toThrow(/Invalid agent file path/);
+      await expect(pm.autoRegisterFromAgentFile('/invalid/path')).rejects.toThrow(/Agent file path does not match expected pattern/);
+    });
+
+    it('should handle missing .bmad directory in path', async () => {
+      const pm = new ProjectManager(TEST_PROJECTS_FILE);
+
+      // Create file outside .bmad structure
+      const invalidPath = path.join(os.tmpdir(), 'invalid-agent.md');
+      await writeFile(invalidPath, '# Agent', 'utf-8');
+
+      await expect(pm.autoRegisterFromAgentFile(invalidPath)).rejects.toThrow(/Agent file path does not match expected pattern/);
+
+      // Cleanup
+      await rm(invalidPath);
+    });
+
+    it('should preserve existing project when path mismatch during merge', async () => {
+      const pm = new ProjectManager(TEST_PROJECTS_FILE);
+
+      // Register project with one path
+      const existingProject = await pm.addProject(testProjectPath);
+
+      // Create in-repo projects.json with different path (simulating different machine)
+      const inRepoProjectsJson = path.join(testProjectPath, 'projects.json');
+      const inRepoProjectId = uuidv4();
+      await writeFile(inRepoProjectsJson, JSON.stringify({
+        schemaVersion: '1.0.0',
+        projects: {
+          [inRepoProjectId]: {
+            id: inRepoProjectId,
+            name: 'in-repo-project',
+            path: '/different/path/on/other/machine',
+            agents: [{
+              id: agentId,
+              name: 'dev.md',
+              relativePath: '.bmad/bmm/agents/dev.md',
+              absolutePath: agentPath,
+            }],
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+          }
+        }
+      }, null, 2), 'utf-8');
+
+      // Try to auto-register - should detect already registered
+      const result = await pm.autoRegisterFromAgentFile(agentPath);
+
+      // Should return undefined because project already exists
+      expect(result).toBeUndefined();
+
+      // Original project should remain unchanged
+      const project = await pm.getProject(existingProject.id);
+      expect(project!.path).toBe(testProjectPath);
+    });
+
+    it('should use atomic write pattern for projects.json update', async () => {
+      const pm = new ProjectManager(TEST_PROJECTS_FILE);
+
+      await pm.autoRegisterFromAgentFile(agentPath);
+
+      // Verify backup file was deleted (atomic write success)
+      const backupPath = `${TEST_PROJECTS_FILE}.backup`;
+      expect(existsSync(backupPath)).toBe(false);
+
+      // Verify projects.json was created
+      expect(existsSync(TEST_PROJECTS_FILE)).toBe(true);
+    });
+  });
+
+  // Story 2.5: findProjectByAgentId tests
+  describe('Story 2.5: findProjectByAgentId', () => {
+    let testProjectPath: string;
+    let agentsDir: string;
+    let agentId: string;
+
+    beforeEach(async () => {
+      // Create test project structure
+      testProjectPath = path.join(os.tmpdir(), `test-project-find-${Date.now()}`);
+      agentsDir = path.join(testProjectPath, '.bmad', 'bmm', 'agents');
+      await mkdir(agentsDir, { recursive: true });
+
+      // Create agent file
+      const agentPath = path.join(agentsDir, 'dev.md');
+      agentId = uuidv4();
+      await writeFile(agentPath, `# Dev Agent\n\n<!-- CCR-AGENT-ID: ${agentId} -->`, 'utf-8');
+    });
+
+    afterEach(async () => {
+      // Clean up test project
+      if (existsSync(testProjectPath)) {
+        await rm(testProjectPath, { recursive: true });
+      }
+    });
+
+    it('should find project containing agent by agent ID', async () => {
+      const pm = new ProjectManager(TEST_PROJECTS_FILE);
+
+      // Add project
+      const project = await pm.addProject(testProjectPath);
+
+      // Find project by agent ID
+      const foundProject = await pm.findProjectByAgentId(agentId);
+
+      expect(foundProject).toBeDefined();
+      expect(foundProject!.id).toBe(project.id);
+      expect(foundProject!.agents.some(a => a.id === agentId)).toBe(true);
+    });
+
+    it('should return undefined for non-existent agent', async () => {
+      const pm = new ProjectManager(TEST_PROJECTS_FILE);
+
+      await pm.addProject(testProjectPath);
+
+      const foundProject = await pm.findProjectByAgentId(uuidv4());
+
+      expect(foundProject).toBeUndefined();
+    });
+
+    it('should return undefined for invalid agent ID format', async () => {
+      const pm = new ProjectManager(TEST_PROJECTS_FILE);
+
+      await pm.addProject(testProjectPath);
+
+      const foundProject = await pm.findProjectByAgentId('invalid-id');
+
+      expect(foundProject).toBeUndefined();
+    });
+
+    it('should search across all projects', async () => {
+      const pm = new ProjectManager(TEST_PROJECTS_FILE);
+
+      // Create second project with different agent
+      const testProjectPath2 = path.join(os.tmpdir(), `test-project-find2-${Date.now()}`);
+      const agentsDir2 = path.join(testProjectPath2, '.bmad', 'bmm', 'agents');
+      await mkdir(agentsDir2, { recursive: true });
+
+      const agentId2 = uuidv4();
+      const agentPath2 = path.join(agentsDir2, 'sm.md');
+      await writeFile(agentPath2, `# SM Agent\n\n<!-- CCR-AGENT-ID: ${agentId2} -->`, 'utf-8');
+
+      const project1 = await pm.addProject(testProjectPath);
+      const project2 = await pm.addProject(testProjectPath2);
+
+      // Find both projects by their agent IDs
+      const foundProject1 = await pm.findProjectByAgentId(agentId);
+      const foundProject2 = await pm.findProjectByAgentId(agentId2);
+
+      expect(foundProject1!.id).toBe(project1.id);
+      expect(foundProject2!.id).toBe(project2.id);
+
+      // Cleanup
+      await rm(testProjectPath2, { recursive: true });
+    });
+  });
+
+  // Story 2.5: findAgentFileById tests
+  describe('Story 2.5: findAgentFileById', () => {
+    let claudeProjectsDir: string;
+    let testProjectPath: string;
+    let agentsDir: string;
+    let agentId: string;
+
+    beforeEach(async () => {
+      // Create mock Claude projects directory
+      claudeProjectsDir = path.join(os.tmpdir(), `test-claude-projects-${Date.now()}`);
+      await mkdir(claudeProjectsDir, { recursive: true });
+
+      // Create test project inside Claude projects directory
+      const projectName = `test-project-${Date.now()}`;
+      testProjectPath = path.join(claudeProjectsDir, projectName);
+      agentsDir = path.join(testProjectPath, '.bmad', 'bmm', 'agents');
+      await mkdir(agentsDir, { recursive: true });
+
+      // Create agent file with ID
+      agentId = uuidv4();
+      const agentPath = path.join(agentsDir, 'dev.md');
+      await writeFile(agentPath, `# Dev Agent\n\n<!-- CCR-AGENT-ID: ${agentId} -->`, 'utf-8');
+    });
+
+    afterEach(async () => {
+      // Clean up test projects directory
+      if (existsSync(claudeProjectsDir)) {
+        await rm(claudeProjectsDir, { recursive: true });
+      }
+    });
+
+    it('should find agent file by agent ID in Claude projects directory', async () => {
+      const pm = new ProjectManager(TEST_PROJECTS_FILE);
+
+      const foundPath = await pm.findAgentFileById(agentId, claudeProjectsDir);
+
+      expect(foundPath).toBeDefined();
+      expect(foundPath).toContain('.bmad/bmm/agents/dev.md');
+      expect(foundPath).toContain(testProjectPath);
+    });
+
+    it('should return undefined for non-existent agent ID', async () => {
+      const pm = new ProjectManager(TEST_PROJECTS_FILE);
+
+      const foundPath = await pm.findAgentFileById(uuidv4(), claudeProjectsDir);
+
+      expect(foundPath).toBeUndefined();
+    });
+
+    it('should return undefined for invalid agent ID format', async () => {
+      const pm = new ProjectManager(TEST_PROJECTS_FILE);
+
+      const foundPath = await pm.findAgentFileById('invalid-id', claudeProjectsDir);
+
+      expect(foundPath).toBeUndefined();
+    });
+
+    it('should search across multiple projects in Claude projects directory', async () => {
+      const pm = new ProjectManager(TEST_PROJECTS_FILE);
+
+      // Create second project with different agent
+      const projectName2 = `test-project2-${Date.now()}`;
+      const testProjectPath2 = path.join(claudeProjectsDir, projectName2);
+      const agentsDir2 = path.join(testProjectPath2, '.bmad', 'bmm', 'agents');
+      await mkdir(agentsDir2, { recursive: true });
+
+      const agentId2 = uuidv4();
+      const agentPath2 = path.join(agentsDir2, 'sm.md');
+      await writeFile(agentPath2, `# SM Agent\n\n<!-- CCR-AGENT-ID: ${agentId2} -->`, 'utf-8');
+
+      // Find both agent files
+      const foundPath1 = await pm.findAgentFileById(agentId, claudeProjectsDir);
+      const foundPath2 = await pm.findAgentFileById(agentId2, claudeProjectsDir);
+
+      expect(foundPath1).toBeDefined();
+      expect(foundPath2).toBeDefined();
+      expect(foundPath1).not.toBe(foundPath2);
+    });
+
+    it('should skip files that cannot be read', async () => {
+      const pm = new ProjectManager(TEST_PROJECTS_FILE);
+
+      // Create an unreadable file (if permissions allow)
+      const unreadablePath = path.join(agentsDir, 'unreadable.md');
+
+      try {
+        await writeFile(unreadablePath, '# Unreadable', 'utf-8');
+        // Make file unreadable (may not work on all systems)
+        await rm(unreadablePath);
+        await mkdir(unreadablePath, { mode: 0o000 });
+      } catch {
+        // Skip this test if we can't create unreadable files
+      }
+
+      // Should still find the readable agent
+      const foundPath = await pm.findAgentFileById(agentId, claudeProjectsDir);
+
+      expect(foundPath).toBeDefined();
+      expect(foundPath).toContain('dev.md');
+
+      // Cleanup unreadable
+      try {
+        await rm(unreadablePath, { force: true, recursive: true });
+      } catch {
+        // Ignore cleanup errors
+      }
+    });
+
+    it('should handle non-existent Claude projects directory gracefully', async () => {
+      const pm = new ProjectManager(TEST_PROJECTS_FILE);
+
+      const nonExistentDir = path.join(os.tmpdir(), `does-not-exist-${Date.now()}`);
+
+      const foundPath = await pm.findAgentFileById(agentId, nonExistentDir);
+
+      expect(foundPath).toBeUndefined();
     });
   });
 });

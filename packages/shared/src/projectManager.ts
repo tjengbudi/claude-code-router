@@ -567,4 +567,193 @@ ${JSON5.stringify(dataWithVersion, { space: 2 })}`;
     console.debug(`Agent not found: ${agentId}`);
     return undefined;
   }
+
+  /**
+   * Auto-register a project from an agent file path - Story 2.5
+   * Detects project path from agent file location and registers if not already present
+   * Merges in-repo projects.json into global projects.json for zero-config onboarding
+   *
+   * @param agentFilePath - Absolute path to the agent markdown file
+   * @returns The registered ProjectConfig, or undefined if already registered
+   * @throws Error if agent file path is invalid or auto-registration fails
+   */
+  async autoRegisterFromAgentFile(agentFilePath: string): Promise<ProjectConfig | undefined> {
+    // Validate agent file path
+    if (!agentFilePath || typeof agentFilePath !== 'string') {
+      throw new Error(`Invalid agent file path: ${agentFilePath}`);
+    }
+
+    // Subtask 1.1: Extract project path from agent file absolute path
+    // Agent files are at: {project-root}/.bmad/bmm/agents/*.md
+    // Project root is the parent of the .bmad directory
+    const agentFileName = path.basename(agentFilePath);
+    if (!agentFilePath.includes('.bmad' + path.sep + 'bmm' + path.sep + 'agents')) {
+      throw new Error(`Agent file path does not match expected pattern: ${agentFilePath}`);
+    }
+
+    // Find project root by going up from .bmad/bmm/agents/
+    const parts = agentFilePath.split(path.sep);
+    const bmadIndex = parts.indexOf('.bmad');
+    if (bmadIndex === -1) {
+      throw new Error(`Cannot find .bmad directory in agent file path: ${agentFilePath}`);
+    }
+    const projectPath = parts.slice(0, bmadIndex).join(path.sep);
+
+    // Subtask 1.2: Check if project already registered in projects.json by path
+    const data = await this.loadProjects();
+    for (const [existingId, existingProject] of Object.entries(data.projects)) {
+      if (existingProject.path === projectPath) {
+        console.debug(`Project already registered: ${existingId} (${existingProject.name})`);
+        return undefined; // Already registered, no action needed
+      }
+    }
+
+    // Subtask 1.3: If not registered, trigger auto-registration flow
+    console.info(`Auto-registering project from agent file: ${projectPath}`);
+
+    // Subtask 2.1 & 2.2: Detect and merge in-repo projects.json
+    const inRepoProjectsJson = path.join(projectPath, 'projects.json');
+    let inRepoData: ProjectsData | null = null;
+
+    try {
+      const content = await fs.readFile(inRepoProjectsJson, 'utf-8');
+      inRepoData = JSON5.parse(content) as ProjectsData;
+      console.info(`Found in-repo projects.json at: ${inRepoProjectsJson}`);
+
+      // Subtask 2.3: Validate and merge in-repo projects.json
+      if (inRepoData.projects && typeof inRepoData.projects === 'object') {
+        // Merge in-repo projects into global projects.json
+        // In-repo config is the "source of truth" for team
+        for (const [projectId, inRepoProject] of Object.entries(inRepoData.projects)) {
+          // Check if project already exists in global config
+          if (!data.projects[projectId]) {
+            // Add project from in-repo config to global config
+            data.projects[projectId] = inRepoProject;
+            console.info(`Merged project from in-repo config: ${projectId} (${inRepoProject.name})`);
+          } else {
+            // Project exists - verify paths match for consistency
+            const existingProject = data.projects[projectId];
+            if (existingProject.path !== inRepoProject.path) {
+              console.warn(
+                `Path mismatch for project ${projectId}: ` +
+                `global="${existingProject.path}" vs in-repo="${inRepoProject.path}". ` +
+                `Using global path.`
+              );
+            }
+          }
+        }
+        await this.saveProjects(data);
+        console.info(`Successfully merged in-repo projects.json into global config`);
+      }
+    } catch (error) {
+      // In-repo projects.json doesn't exist or is invalid - this is okay
+      // We'll register the project using the standard addProject flow
+      console.debug(`No valid in-repo projects.json found: ${(error as Error).message}`);
+    }
+
+    // After potential merge, check again if project is now registered
+    for (const [existingId, existingProject] of Object.entries(data.projects)) {
+      if (existingProject.path === projectPath) {
+        console.info(`Project registered after merge: ${existingId} (${existingProject.name})`);
+        return existingProject;
+      }
+    }
+
+    // If still not registered (no in-repo config or merge didn't include this project),
+    // register using standard addProject flow
+    console.info(`Registering new project using standard flow: ${projectPath}`);
+    const newProject = await this.addProject(projectPath);
+    console.info(`Successfully auto-registered project: ${newProject.id} (${newProject.name})`);
+    return newProject;
+  }
+
+  /**
+   * Find project containing a specific agent by agent ID - Story 2.5
+   * Searches across all registered projects to find which project contains the agent
+   *
+   * @param agentId - UUID of the agent
+   * @returns ProjectConfig if found, undefined otherwise
+   */
+  async findProjectByAgentId(agentId: string): Promise<ProjectConfig | undefined> {
+    if (!Validators.isValidAgentId(agentId)) {
+      return undefined;
+    }
+
+    const data = await this.loadProjects();
+    for (const project of Object.values(data.projects)) {
+      const agent = project.agents.find(a => a.id === agentId);
+      if (agent) {
+        return project;
+      }
+    }
+
+    return undefined;
+  }
+
+  /**
+   * Find agent file path by agent ID in Claude projects directory - Story 2.5
+   * Searches through all Claude projects to find the agent file containing the given agent ID
+   * Used for auto-registration when agent ID is detected but project is not registered
+   *
+   * @param agentId - UUID of the agent to find
+   * @param claudeProjectsDir - Path to Claude projects directory (default: ~/.claude/projects)
+   * @returns Absolute path to agent file if found, undefined otherwise
+   */
+  async findAgentFileById(agentId: string, claudeProjectsDir?: string): Promise<string | undefined> {
+    if (!Validators.isValidAgentId(agentId)) {
+      return undefined;
+    }
+
+    const searchDir = claudeProjectsDir || path.join(process.env.HOME || '', '.claude', 'projects');
+
+    try {
+      // Get all project directories using glob pattern
+      const projectPattern = path.join(searchDir, '*');
+      const potentialPaths = await glob(projectPattern, { windowsPathsNoEscape: true });
+
+      // Filter to only directories
+      const projectDirs: string[] = [];
+      for (const potentialPath of potentialPaths) {
+        try {
+          const stat = await fs.stat(potentialPath);
+          if (stat.isDirectory()) {
+            projectDirs.push(potentialPath);
+          }
+        } catch {
+          continue; // Skip entries that can't be accessed
+        }
+      }
+
+      // Search each project for agents with matching ID
+      for (const projectPath of projectDirs) {
+        const agentsPattern = path.join(projectPath, '.bmad', 'bmm', 'agents', '*.md');
+
+        let agentFiles: string[];
+        try {
+          agentFiles = await glob(agentsPattern, { windowsPathsNoEscape: true });
+        } catch {
+          continue; // Skip projects without agent directories
+        }
+
+        // Read each agent file to find matching CCR-AGENT-ID
+        for (const agentFile of agentFiles) {
+          try {
+            const content = await fs.readFile(agentFile, 'utf-8');
+            const match = content.match(/<!-- CCR-AGENT-ID: ([a-f0-9-]+) -->/);
+            if (match && match[1] === agentId) {
+              console.debug(`Found agent file for ${agentId}: ${agentFile}`);
+              return agentFile;
+            }
+          } catch {
+            // Skip files that can't be read
+            continue;
+          }
+        }
+      }
+    } catch (error) {
+      console.debug(`Error searching for agent file: ${(error as Error).message}`);
+    }
+
+    return undefined;
+  }
 }

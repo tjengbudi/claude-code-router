@@ -210,6 +210,7 @@ const getUseModel = async (
   // ============ START: Agent System Integration (Story 2.3) ============
   // Priority 6.5: Agent-based routing (between "think model" and Router.default)
   // Story 2.3 AC: When agent has no model configured, fall back to Router.default
+  // Story 2.5: Auto-registration for zero-config team onboarding
   const agentId = extractAgentId(req, req.log);
   if (agentId) {
     try {
@@ -219,7 +220,39 @@ const getUseModel = async (
         req.log.debug({ agentId, model: agentModel }, 'Agent routing to configured model');
         return { model: agentModel, scenarioType: 'default' };
       } else {
-        // Agent exists but no model configured → use Router.default
+        // Story 2.5: Agent ID found but not registered - try auto-registration
+        // Optimization: First check if agent is already registered but has no model
+        // This avoids expensive filesystem scans for known agents
+        const existingProject = await projectManager.findProjectByAgentId(agentId);
+
+        if (existingProject) {
+           req.log.debug({ agentId, projectId: existingProject.id }, 'Agent is registered but has no model configured');
+        } else {
+           req.log.debug({ agentId }, 'Agent not registered, attempting auto-registration');
+
+           // Find agent file in Claude projects directory
+           const agentFilePath = await projectManager.findAgentFileById(agentId, CLAUDE_PROJECTS_DIR);
+           if (agentFilePath) {
+             req.log.info({ agentId, agentFilePath }, 'Found agent file, triggering auto-registration');
+
+             // Auto-register the project
+             const registeredProject = await projectManager.autoRegisterFromAgentFile(agentFilePath);
+             if (registeredProject) {
+               req.log.info({ agentId, projectId: registeredProject.id }, 'Project auto-registered successfully');
+
+               // Try to get model again after auto-registration
+               const agentModelAfterRegistration = await projectManager.getModelByAgentId(agentId);
+               if (agentModelAfterRegistration) {
+                 req.log.info({ agentId, model: agentModelAfterRegistration }, 'Agent using configured model after auto-registration');
+                 return { model: agentModelAfterRegistration, scenarioType: 'default' };
+               }
+             }
+           } else {
+             req.log.debug({ agentId }, 'Agent file not found in Claude projects directory');
+           }
+        }
+
+        // Agent exists (or auto-registration finished) but no model configured → use Router.default
         req.log.debug({ agentId }, 'Agent using Router.default (no model configured)');
         // Fall through to Router.default below
       }
