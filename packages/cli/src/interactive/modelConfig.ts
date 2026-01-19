@@ -320,6 +320,16 @@ export async function interactiveModelConfiguration(projectId: string): Promise<
       for (const line of session.getSummary()) {
         console.log(`${DIM}${line}${RESET}`);
       }
+
+      // Story 2.4: Git workflow guidance
+      console.log(`\n${DIM}Next steps:${RESET}`);
+      console.log(`${DIM}  • Copy projects.json to share with your team:${RESET}`);
+      console.log(`${DIM}      cp ~/.claude-code-router/projects.json .claude-code-router/${RESET}`);
+      console.log(`${DIM}  • Commit and push to git:${RESET}`);
+      console.log(`${DIM}      git add .claude-code-router/projects.json${RESET}`);
+      console.log(`${DIM}      git commit -m "Configure agent model assignments"${RESET}`);
+      console.log(`${DIM}  • Team members will receive this configuration on git pull${RESET}`);
+      console.log(`${DIM}  • No manual setup needed for team members (zero-config onboarding)${RESET}`);
     } catch (error) {
       const errorMsg = (error as Error).message;
       console.error(`${RED}✗ Error saving configuration: ${errorMsg}${RESET}`);

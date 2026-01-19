@@ -17,6 +17,16 @@ export async function handleProjectCommand(args: string[]): Promise<void> {
     console.log('  list             List all registered projects');
     console.log('  scan <id>        Rescan project for new or deleted agents');
     console.log('  configure <id>   Configure agent models interactively');
+    console.log('\nGit-Based Configuration Sharing:');
+    console.log('  Projects are stored in ~/.claude-code-router/projects.json');
+    console.log('  This file is safe to commit to git (contains no API keys)');
+    console.log('  Share configurations with your team via version control');
+    console.log('  Team members receive agent routing on git pull (zero-config)');
+    console.log('\nExamples:');
+    console.log('  ccr project add /home/user/my-project');
+    console.log('  ccr project configure <project-id>');
+    console.log('  git add ~/.claude-code-router/projects.json');
+    console.log('  git commit -m "Configure agent models"');
     return;
   }
 
@@ -86,6 +96,14 @@ async function handleProjectAdd(args: string[]): Promise<void> {
       console.log(`  ├─ ${agent.name} → CCR-AGENT-ID: ${agent.id}`);
     }
   }
+
+  // Story 2.4: Git workflow hint for team collaboration
+  console.log('\n  Next steps:');
+  console.log('  • Configure agent models: ccr project configure ' + result.id);
+  console.log('  • Commit and push to share with your team:');
+  console.log('      git add ~/.claude-code-router/projects.json');
+  console.log('      git commit -m "Add project: ' + result.name + '"');
+  console.log('  • Team members will receive configuration on git pull');
 }
 
 /**

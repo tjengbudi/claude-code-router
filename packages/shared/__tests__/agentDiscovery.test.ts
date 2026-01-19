@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from '@jest/globals';
 import { ProjectManager } from '../src/projectManager';
 import { rm } from 'fs/promises';
 import { existsSync } from 'fs';

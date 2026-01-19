@@ -42,6 +42,10 @@ export const API_KEY_PATTERNS = [
   /^AKIA[0-9A-Z]{16}$/i,        // AWS access keys
 ];
 
+// Projects schema version for git-based configuration sharing (Story 2.4)
+// Used for forward/backward compatibility when loading projects.json from git
+export const PROJECTS_SCHEMA_VERSION = '1.0.0';
+
 
 export interface DefaultConfig {
   LOG: boolean;

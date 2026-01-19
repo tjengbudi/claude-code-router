@@ -1,3 +1,4 @@
+import { describe, it, expect, beforeEach, jest } from '@jest/globals';
 import fs from 'fs/promises';
 import path from 'path';
 import JSON5 from 'json5';
@@ -9,6 +10,12 @@ jest.mock('fs/promises');
 jest.mock('glob', () => ({
   glob: jest.fn()
 }));
+
+// Type assertions for mocked functions
+const mockFsRead = fs.readFile as jest.MockedFunction<typeof fs.readFile>;
+const mockFsWrite = fs.writeFile as jest.MockedFunction<typeof fs.writeFile>;
+const mockFsAccess = fs.access as jest.MockedFunction<typeof fs.access>;
+const mockFsMkdir = fs.mkdir as jest.MockedFunction<typeof fs.mkdir>;
 
 describe('ProjectManager', () => {
   const mockProjectsFile = '/home/user/.claude-code-router/projects.json';
@@ -45,19 +52,20 @@ describe('ProjectManager', () => {
 
     it('should set agent model and save file', async () => {
       // Mock loadProjects via fs.readFile
-      (fs.readFile as jest.Mock).mockResolvedValue(JSON.stringify(mockProjectsData));
+      mockFsRead.mockResolvedValue(JSON.stringify(mockProjectsData));
       // Mock validation
-      (fs.access as jest.Mock).mockResolvedValue(undefined);
-      (fs.writeFile as jest.Mock).mockResolvedValue(undefined);
-      (fs.mkdir as jest.Mock).mockResolvedValue(undefined);
+      mockFsAccess.mockResolvedValue(undefined);
+      mockFsWrite.mockResolvedValue(undefined);
+      mockFsMkdir.mockResolvedValue(undefined);
 
       const model = 'openai,gpt-4o';
       await projectManager.setAgentModel(projectId, agentId, model);
 
       // Verify saveProjects called (via fs.writeFile)
       expect(fs.writeFile).toHaveBeenCalled();
-      const writeCall = (fs.writeFile as jest.Mock).mock.calls[0];
-      const savedContent = JSON5.parse(writeCall[1].replace('// Project configurations for CCR agent system\n', ''));
+      const writeCall = mockFsWrite.mock.calls[0];
+      const contentStr = Buffer.from(writeCall[1] as any).toString('utf-8');
+      const savedContent = JSON5.parse(contentStr.replace('// Project configurations for CCR agent system\n', ''));
 
       expect(savedContent.projects[projectId].agents[0].model).toBe(model);
     });
@@ -66,29 +74,30 @@ describe('ProjectManager', () => {
       const dataWithModel = JSON.parse(JSON.stringify(mockProjectsData));
       dataWithModel.projects[projectId].agents[0].model = 'old,model';
 
-      (fs.readFile as jest.Mock).mockResolvedValue(JSON.stringify(dataWithModel));
-      (fs.access as jest.Mock).mockResolvedValue(undefined);
-      (fs.writeFile as jest.Mock).mockResolvedValue(undefined);
-      (fs.mkdir as jest.Mock).mockResolvedValue(undefined);
+      mockFsRead.mockResolvedValue(JSON.stringify(dataWithModel));
+      mockFsAccess.mockResolvedValue(undefined);
+      mockFsWrite.mockResolvedValue(undefined);
+      mockFsMkdir.mockResolvedValue(undefined);
 
       await projectManager.setAgentModel(projectId, agentId, undefined);
 
       expect(fs.writeFile).toHaveBeenCalled();
-      const writeCall = (fs.writeFile as jest.Mock).mock.calls[0];
-      const savedContent = JSON5.parse(writeCall[1].replace('// Project configurations for CCR agent system\n', ''));
+      const writeCall = mockFsWrite.mock.calls[0];
+      const contentStr = Buffer.from(writeCall[1] as any).toString('utf-8');
+      const savedContent = JSON5.parse(contentStr.replace('// Project configurations for CCR agent system\n', ''));
 
       expect(savedContent.projects[projectId].agents[0].model).toBeUndefined();
     });
 
     it('should throw error if model string is invalid', async () => {
-      (fs.readFile as jest.Mock).mockResolvedValue(JSON.stringify(mockProjectsData));
+      mockFsRead.mockResolvedValue(JSON.stringify(mockProjectsData));
 
       await expect(projectManager.setAgentModel(projectId, agentId, 'invalid-model'))
         .rejects.toThrow('Invalid model string format');
     });
 
     it('should throw error if project not found', async () => {
-      (fs.readFile as jest.Mock).mockResolvedValue(JSON.stringify({ projects: {} }));
+      mockFsRead.mockResolvedValue(JSON.stringify({ projects: {} }));
 
       await expect(projectManager.setAgentModel(projectId, agentId, 'openai,gpt-4o'))
         .rejects.toThrow('Project not found');
@@ -122,7 +131,7 @@ describe('ProjectManager', () => {
     };
 
     it('should return model string if agent configured', async () => {
-      (fs.readFile as jest.Mock).mockResolvedValue(JSON.stringify(mockProjectsData));
+      mockFsRead.mockResolvedValue(JSON.stringify(mockProjectsData));
 
       const result = await projectManager.getModelByAgentId(agentId);
       expect(result).toBe(model);
@@ -131,14 +140,14 @@ describe('ProjectManager', () => {
     it('should return undefined if agent has no model', async () => {
       const dataNoModel = JSON.parse(JSON.stringify(mockProjectsData));
       delete dataNoModel.projects[projectId].agents[0].model;
-      (fs.readFile as jest.Mock).mockResolvedValue(JSON.stringify(dataNoModel));
+      mockFsRead.mockResolvedValue(JSON.stringify(dataNoModel) as any);
 
       const result = await projectManager.getModelByAgentId(agentId);
       expect(result).toBeUndefined();
     });
 
     it('should return undefined if agent not found', async () => {
-      (fs.readFile as jest.Mock).mockResolvedValue(JSON.stringify(mockProjectsData));
+      mockFsRead.mockResolvedValue(JSON.stringify(mockProjectsData));
       const otherId = '00000000-0000-4000-8000-000000000000';
 
       const result = await projectManager.getModelByAgentId(otherId);

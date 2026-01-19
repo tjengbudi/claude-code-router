@@ -4,7 +4,7 @@ import { v4 as uuidv4, validate as uuidValidate } from 'uuid';
 import JSON5 from 'json5';
 import { glob } from 'glob';
 import type { ProjectConfig, ProjectsData, AgentConfig, RescanResult } from './types/agent';
-import { AGENT_ID_REGEX } from './constants';
+import { AGENT_ID_REGEX, PROJECTS_SCHEMA_VERSION } from './constants';
 import { Validators } from './validation';
 
 /**
@@ -24,13 +24,41 @@ export class ProjectManager {
 
   /**
    * Load projects data from projects.json (JSON5 format)
+   * Story 2.4: Validates schema version for forward/backward compatibility
    */
   async loadProjects(): Promise<ProjectsData> {
     try {
       const content = await fs.readFile(this.projectsFile, 'utf-8');
-      return JSON5.parse(content) as ProjectsData;
-    } catch {
-      // Return default structure if file doesn't exist
+      const data = JSON5.parse(content) as ProjectsData;
+
+      // Story 2.4: Check schema version compatibility
+      if (data.schemaVersion !== undefined) {
+        if (data.schemaVersion !== PROJECTS_SCHEMA_VERSION) {
+          // Schema version mismatch - log warning but attempt to load anyway
+          // This allows forward compatibility (newer versions) and backward compatibility (older versions)
+          console.warn(
+            `Schema version mismatch: expected ${PROJECTS_SCHEMA_VERSION}, found ${data.schemaVersion}. ` +
+            `Attempting compatibility mode.`
+          );
+        }
+      } else {
+        // No schema version - this is a pre-Story 2.4 projects.json file
+        console.debug(
+          `projects.json has no schema version (pre-Story 2.4 format). ` +
+          `Current version is ${PROJECTS_SCHEMA_VERSION}. Loading with backward compatibility.`
+        );
+      }
+
+      // Story 2.4: Validate structure for graceful degradation
+      if (!data.projects || typeof data.projects !== 'object') {
+        console.warn('Invalid projects.json structure: missing or invalid projects object. Returning empty projects.');
+        return { projects: {} };
+      }
+
+      return data;
+    } catch (error) {
+      // Return default structure if file doesn't exist or is corrupted
+      console.debug(`Failed to load projects.json: ${(error as Error).message}. Returning empty projects.`);
       return { projects: {} };
     }
   }
@@ -84,6 +112,7 @@ export class ProjectManager {
    * Save projects data to projects.json (JSON5 format with comments)
    * Uses atomic write with backup pattern for safety
    * Validates write permissions before attempting file operations
+   * Story 2.4: Adds schemaVersion for git-based configuration sharing
    */
   private async saveProjects(data: ProjectsData): Promise<void> {
     const dirPath = path.dirname(this.projectsFile);
@@ -98,8 +127,17 @@ export class ProjectManager {
     // Ensure directory exists
     await fs.mkdir(dirPath, { recursive: true });
 
-    // Prepare content
-    const content = `// Project configurations for CCR agent system\n${JSON5.stringify(data, { space: 2 })}`;
+    // Story 2.4: Add schemaVersion to data for git-based sharing
+    const dataWithVersion = {
+      schemaVersion: PROJECTS_SCHEMA_VERSION,
+      ...data
+    };
+
+    // Prepare content with human-readable JSON5 format
+    const content = `// Project configurations for CCR agent system
+// Schema version: ${PROJECTS_SCHEMA_VERSION}
+// This file is safe to commit to git (contains no API keys)
+${JSON5.stringify(dataWithVersion, { space: 2 })}`;
 
     // Use safe write helper
     await this.safeFileWrite(this.projectsFile, content);

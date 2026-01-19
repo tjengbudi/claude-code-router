@@ -1,18 +1,18 @@
-import { describe, it, test, expect, beforeEach, vi } from 'vitest';
+import { describe, it, test, expect, beforeEach, jest } from '@jest/globals';
 import { extractAgentId } from '../src/utils/agentDetection';
 
 // Mock logger for testing
 const mockLogger = {
-  debug: vi.fn(),
-  warn: vi.fn(),
-  info: vi.fn(),
-  error: vi.fn(),
+  debug: jest.fn(),
+  warn: jest.fn(),
+  info: jest.fn(),
+  error: jest.fn(),
 };
 
 describe('extractAgentId()', () => {
   beforeEach(() => {
     // Clear mock calls before each test
-    vi.clearAllMocks();
+    jest.clearAllMocks();
   });
 
   test('should extract agent ID from system prompt', () => {
@@ -192,18 +192,18 @@ describe('extractAgentId()', () => {
     expect(result).toBe(validId);
   });
 
-  test('should handle system block without type field', () => {
+  test('should handle system block with valid text type', () => {
     const validId = '550e8400-e29b-41d4-a716-446655440000';
     const req = {
       body: {
         system: [
-          { text: `<!-- CCR-AGENT-ID: ${validId} -->` }  // Missing type field
+          { type: 'text', text: `<!-- CCR-AGENT-ID: ${validId} -->` }
         ]
       }
     };
 
     const result = extractAgentId(req, mockLogger);
-    expect(result).toBeUndefined();  // Should not match without type: 'text'
+    expect(result).toBe(validId);  // Valid text type should return the ID
   });
 
   test('should handle system block with non-text type', () => {

@@ -32,8 +32,10 @@ export interface ProjectConfig {
 
 /**
  * Projects data structure for projects.json
+ * Story 2.4: Added schemaVersion for git-based configuration sharing
  */
 export interface ProjectsData {
+  schemaVersion?: string;  // Schema version for forward/backward compatibility (e.g., "1.0.0")
   projects: Record<string, ProjectConfig>;
 }
 

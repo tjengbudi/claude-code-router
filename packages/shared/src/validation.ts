@@ -1,7 +1,7 @@
 import fs from 'fs/promises';
 import path from 'path';
 import { validate as uuidValidate } from 'uuid';
-import { AGENT_ID_REGEX, MODEL_STRING_REGEX, API_KEY_PATTERNS } from './constants';
+import { AGENT_ID_REGEX, MODEL_STRING_REGEX, API_KEY_PATTERNS, PROJECTS_SCHEMA_VERSION } from './constants';
 import type { ProjectsData } from './types/agent';
 
 /**
@@ -52,25 +52,97 @@ export class Validators {
 
   /**
    * Validate projects.json schema with type guard
+   * Story 2.4: Enhanced with schema version validation and graceful degradation
    * @param data - Data to validate
    * @returns true if data is valid ProjectsData structure
    */
   static isValidProjectsData(data: unknown): data is ProjectsData {
-    const projects = (data as any)?.projects;
-    return (
-      typeof data === 'object' &&
-      data !== null &&
-      'projects' in data &&
-      typeof projects === 'object' &&
-      projects !== null &&
-      !Array.isArray(projects)
-    );
+    if (typeof data !== 'object' || data === null) {
+      return false;
+    }
+
+    const dataObj = data as Record<string, unknown>;
+
+    // Check for projects object
+    const projects = dataObj.projects;
+    if (typeof projects !== 'object' || projects === null || Array.isArray(projects)) {
+      return false;
+    }
+
+    // Story 2.4: Schema version validation (optional for backward compatibility)
+    if (dataObj.schemaVersion !== undefined) {
+      if (typeof dataObj.schemaVersion !== 'string') {
+        console.warn('Invalid schemaVersion format (should be string), ignoring');
+      }
+      // Version mismatch is allowed - will log warning in loadProjects
+    }
+
+    return true;
+  }
+
+  /**
+   * Check if a string contains secret-like patterns
+   * Story 2.4: Security validation to prevent API keys from leaking into git
+   * @param str - String to check
+   * @returns true if string contains secret-like patterns
+   */
+  static containsSecret(str: string): boolean {
+    const lowerStr = str.toLowerCase();
+
+    // Check for secret-like keywords
+    // These patterns detect secret-related terms while avoiding false positives
+    // on legitimate words like "tokenize", "keyboard", "keyword"
+    const secretKeywords = [
+      'api-key',
+      'apikey',
+      'api_key',
+      'secret',
+      'password',
+      'credential',
+      'auth-token',
+      'auth_token',
+      'bearer',
+    ];
+
+    for (const keyword of secretKeywords) {
+      if (lowerStr.includes(keyword)) {
+        return true;
+      }
+    }
+
+    // Check for "token" as a standalone word (not part of "tokenize" or "keyword")
+    // This regex matches "token" when surrounded by delimiters but not followed by letters
+    if (/(\W|^)token(\W|$)/.test(lowerStr) && !/tokenize|keyword|detector|rotator/.test(lowerStr)) {
+      return true;
+    }
+
+    // Check against known API key patterns
+    for (const pattern of API_KEY_PATTERNS) {
+      if (pattern.test(str)) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  /**
+   * Validate semantic version string (for schemaVersion)
+   * Story 2.4: Version format validation
+   * @param version - Version string to validate
+   * @returns true if version is valid semver format
+   */
+  static isValidSchemaVersion(version: string): boolean {
+    // Basic semver regex: X.Y.Z where X, Y, Z are numbers
+    const semverRegex = /^\d+\.\d+\.\d+(-[a-zA-Z0-9.]+)?$/;
+    return semverRegex.test(version);
   }
 
   /**
    * Validate model string format - Story 2.1
    * Model string format: "provider,modelname" (e.g., "openai,gpt-4o")
    * Rejects strings that look like API keys (security: NFR-S1)
+   * Story 2.4: Enhanced with containsSecret helper
    * @param model - Model string to validate
    * @returns true if model string matches expected format and is not an API key
    */
@@ -93,17 +165,20 @@ export class Validators {
 
     const [provider, modelName] = parts;
 
-    // Security: Reject if either part looks like an API key (AC: 5)
+    // Story 2.4: Security: Reject if either part looks like a secret
+    // Check provider and model name individually against API key patterns
     for (const pattern of API_KEY_PATTERNS) {
       if (pattern.test(provider) || pattern.test(modelName)) {
         return false;
       }
     }
 
-    // Additional checks: reject common API key patterns not caught by regex
-    // - Contains "key" keyword
-    // - Very long strings (likely API keys)
-    // - Suspiciously short strings (likely invalid)
+    // Also use containsSecret for additional keyword checks
+    if (this.containsSecret(provider) || this.containsSecret(modelName)) {
+      return false;
+    }
+
+    // Additional checks: reject common invalid patterns
     const lowerModel = model.toLowerCase();
     if (
       lowerModel.includes('key') ||
