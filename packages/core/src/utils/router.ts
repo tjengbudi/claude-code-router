@@ -3,11 +3,16 @@ import { sessionUsageCache, Usage } from "./cache";
 import { readFile } from "fs/promises";
 import { opendir, stat } from "fs/promises";
 import { join } from "path";
-import { CLAUDE_PROJECTS_DIR, HOME_DIR } from "@CCR/shared";
+import { CLAUDE_PROJECTS_DIR, HOME_DIR, PROJECTS_FILE, ProjectManager, Validators } from "@CCR/shared";
+
+// ============ START: Agent System Integration (Story 2.3) ============
+// Singleton ProjectManager instance for agent-to-model lookups
+// Story 2.3: Router.default fallback mechanism
+const projectManager = new ProjectManager(PROJECTS_FILE);
+// ============ END: Agent System Integration ============
 import { LRUCache } from "lru-cache";
 import { ConfigService } from "../services/config";
 import { TokenizerService } from "../services/tokenizer";
-import { Validators } from "@CCR/shared/src/validation";
 
 // Types from @anthropic-ai/sdk
 interface Tool {
@@ -89,72 +94,8 @@ export const calculateTokenCount = (
   return tokenCount;
 };
 
-/**
- * Extract agent ID from Claude Code request
- * Checks both system prompt and message history per Architecture
- *
- * Story 1.5: Agent ID Extraction & Detection
- *
- * @param req - Claude Code API request object
- * @param log - Logger instance for debugging
- * @returns Agent UUID or undefined if not found/invalid
- *
- * @performance ~1ms extraction time (well under 50ms NFR-P1 target)
- * @security UUID validation prevents injection attacks (NFR-S3)
- */
-export const extractAgentId = (req: any, log?: any): string | undefined => {
-  // Story 1.5, Task 1.2 & 1.6: Request validation and graceful degradation
-  if (!req?.body) {
-    if (log?.debug) log.debug('Malformed request: missing body');
-    return undefined;
-  }
 
-  // Story 1.5, Task 1.2 & 1.4: Extract UUID from first match in system prompt
-  if (req.body.system && Array.isArray(req.body.system)) {
-    for (const block of req.body.system) {
-      if (block.type === 'text' && block.text) {
-        const match = block.text.match(/<!-- CCR-AGENT-ID: ([a-f0-9-]+) -->/);
-        if (match) {
-          const agentId = match[1];
-
-          // Story 1.5, Task 2.2 & 2.4: Validate UUID format (NFR-S3)
-          if (!Validators.isValidAgentId(agentId)) {
-            if (log?.warn) log.warn({ agentId }, 'Invalid agent ID format in system prompt');
-            return undefined;
-          }
-
-          if (log?.debug) log.debug({ agentId }, 'Agent ID extracted from system prompt');
-          return agentId;
-        }
-      }
-    }
-  }
-
-  // Story 1.5, Task 1.5: Fallback to message history if not in system prompt
-  if (req.body.messages && Array.isArray(req.body.messages)) {
-    for (const message of req.body.messages) {
-      if (typeof message.content === 'string') {
-        const match = message.content.match(/<!-- CCR-AGENT-ID: ([a-f0-9-]+) -->/);
-        if (match) {
-          const agentId = match[1];
-
-          // Story 1.5, Task 2.2 & 2.4: Validate UUID format (NFR-S3)
-          if (!Validators.isValidAgentId(agentId)) {
-            if (log?.warn) log.warn({ agentId }, 'Invalid agent ID format in message history');
-            return undefined;
-          }
-
-          if (log?.debug) log.debug({ agentId }, 'Agent ID extracted from message history');
-          return agentId;
-        }
-      }
-    }
-  }
-
-  // Story 1.5, Task 3.1 & 4.4: No agent ID found (graceful degradation)
-  if (log?.debug) log.debug('No agent ID found in request');
-  return undefined;
-};
+import { extractAgentId } from "./agentDetection";
 
 const getProjectSpecificRouter = async (
   req: any,
@@ -264,7 +205,38 @@ const getUseModel = async (
     req.log.info(`Using think model for ${req.body.thinking}`);
     return { model: Router.think, scenarioType: 'think' };
   }
-  return { model: Router?.default, scenarioType: 'default' };
+
+  // ============ START: Agent System Integration (Story 2.3) ============
+  // Priority 6.5: Agent-based routing (between "think model" and Router.default)
+  // Story 2.3 AC: When agent has no model configured, fall back to Router.default
+  const agentId = extractAgentId(req, req.log);
+  if (agentId) {
+    try {
+      const agentModel = await projectManager.getModelByAgentId(agentId);
+      if (agentModel) {
+        // Agent has configured model - use it
+        req.log.debug({ agentId, model: agentModel }, 'Agent routing to configured model');
+        return { model: agentModel, scenarioType: 'default' };
+      } else {
+        // Agent exists but no model configured → use Router.default
+        req.log.debug({ agentId }, 'Agent using Router.default (no model configured)');
+        // Fall through to Router.default below
+      }
+    } catch (error) {
+      // Unexpected failure - log error and fallback to Router.default (graceful degradation)
+      req.log.error({ error, agentId }, 'Agent routing failed, using Router.default');
+      // Fall through to Router.default below
+    }
+  }
+  // ============ END: Agent System Integration ============
+
+  // Story 2.3 AC: Handle edge case where Router.default is not configured
+  // Use hardcoded fallback as last resort
+  const defaultModel = Router?.default || 'anthropic,claude-sonnet-4';
+  if (!Router?.default) {
+    req.log.warn('Router.default not configured in config.json, using hardcoded fallback: anthropic,claude-sonnet-4');
+  }
+  return { model: defaultModel, scenarioType: 'default' };
 };
 
 export interface RouterContext {
