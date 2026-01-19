@@ -1,5 +1,28 @@
 import { Validators } from "@CCR/shared";
 
+// Story 2.3 Review Fix: Type definitions for safety
+export interface AgentDetectionRequest {
+  body?: {
+    system?: Array<{
+      type: string;
+      text?: string;
+    }>;
+    messages?: Array<{
+      role?: string;
+      content: string | any[];
+    }>;
+    [key: string]: any;
+  };
+  [key: string]: any;
+}
+
+export interface Logger {
+  debug: (obj: object | string, msg?: string) => void;
+  warn: (obj: object | string, msg?: string) => void;
+  info: (obj: object | string, msg?: string) => void;
+  error: (obj: object | string, msg?: string) => void;
+}
+
 /**
  * Extract agent ID from Claude Code request
  * Checks both system prompt and message history per Architecture
@@ -13,7 +36,7 @@ import { Validators } from "@CCR/shared";
  * @performance ~1ms extraction time (well under 50ms NFR-P1 target)
  * @security UUID validation prevents injection attacks (NFR-S3)
  */
-export const extractAgentId = (req: any, log?: any): string | undefined => {
+export const extractAgentId = (req: AgentDetectionRequest, log?: Logger): string | undefined => {
   // Story 1.5, Task 1.2 & 1.6: Request validation and graceful degradation
   if (!req?.body) {
     if (log?.debug) log.debug('Malformed request: missing body');
@@ -24,6 +47,11 @@ export const extractAgentId = (req: any, log?: any): string | undefined => {
   if (req.body.system && Array.isArray(req.body.system)) {
     for (const block of req.body.system) {
       if (block.type === 'text' && block.text) {
+        // Optimization: Fast check before expensive regex (Story 2.3 Review Fix)
+        if (!block.text.includes('CCR-AGENT-ID')) {
+          continue;
+        }
+
         const match = block.text.match(/<!-- CCR-AGENT-ID: ([a-f0-9-]+) -->/);
         if (match) {
           const agentId = match[1];

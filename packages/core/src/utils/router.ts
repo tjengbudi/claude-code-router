@@ -9,6 +9,7 @@ import { CLAUDE_PROJECTS_DIR, HOME_DIR, PROJECTS_FILE, ProjectManager, Validator
 // Singleton ProjectManager instance for agent-to-model lookups
 // Story 2.3: Router.default fallback mechanism
 const projectManager = new ProjectManager(PROJECTS_FILE);
+const FALLBACK_DEFAULT_MODEL = 'anthropic,claude-sonnet-4';
 // ============ END: Agent System Integration ============
 import { LRUCache } from "lru-cache";
 import { ConfigService } from "../services/config";
@@ -232,9 +233,9 @@ const getUseModel = async (
 
   // Story 2.3 AC: Handle edge case where Router.default is not configured
   // Use hardcoded fallback as last resort
-  const defaultModel = Router?.default || 'anthropic,claude-sonnet-4';
+  const defaultModel = Router?.default || FALLBACK_DEFAULT_MODEL;
   if (!Router?.default) {
-    req.log.warn('Router.default not configured in config.json, using hardcoded fallback: anthropic,claude-sonnet-4');
+    req.log.warn(`Router.default not configured in config.json, using hardcoded fallback: ${FALLBACK_DEFAULT_MODEL}`);
   }
   return { model: defaultModel, scenarioType: 'default' };
 };

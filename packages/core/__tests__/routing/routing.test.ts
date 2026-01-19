@@ -5,7 +5,7 @@
  * including Router.default fallback when agents have no specific model configured.
  */
 
-import { describe, it, expect, beforeEach, afterEach, jest } from '@jest/globals';
+import { describe, test, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { ProjectManager, PROJECTS_FILE } from '@CCR/shared';
 import fs from 'fs/promises';
 import path from 'path';

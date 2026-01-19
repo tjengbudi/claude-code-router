@@ -1,21 +1,18 @@
-import { describe, it, expect, beforeEach, jest } from '@jest/globals';
+import { describe, it, test, expect, beforeEach, vi } from 'vitest';
 import { extractAgentId } from '../src/utils/agentDetection';
 
 // Mock logger for testing
 const mockLogger = {
-  debug: jest.fn(),
-  warn: jest.fn(),
-  info: jest.fn(),
-  error: jest.fn(),
+  debug: vi.fn(),
+  warn: vi.fn(),
+  info: vi.fn(),
+  error: vi.fn(),
 };
 
 describe('extractAgentId()', () => {
   beforeEach(() => {
     // Clear mock calls before each test
-    mockLogger.debug.mockClear();
-    mockLogger.warn.mockClear();
-    mockLogger.info.mockClear();
-    mockLogger.error.mockClear();
+    vi.clearAllMocks();
   });
 
   test('should extract agent ID from system prompt', () => {
