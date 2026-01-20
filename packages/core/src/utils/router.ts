@@ -233,6 +233,8 @@ const getUseModel = async (
           // Story 3.1: Check cache first (90%+ hit rate target per NFR-P2)
           const cachedModel = sessionAgentModelCache.get(cacheKey);
           if (cachedModel) {
+            // Story 3.2: Track cache hit metric
+            cacheMetrics.hits++;
             req.log.debug({ cacheKey, model: cachedModel }, 'Agent model cache hit');
             return { model: cachedModel, scenarioType: 'default' };
           }
@@ -241,6 +243,8 @@ const getUseModel = async (
           const agentModel = await projectManager.getModelByAgentId(agentId, projectId);
           if (agentModel) {
             // Story 3.1: Store result in cache for subsequent requests
+            // Story 3.2: Track cache miss metric
+            cacheMetrics.misses++;
             sessionAgentModelCache.set(cacheKey, agentModel);
             req.log.debug({ cacheKey, model: agentModel }, 'Agent model cache miss, stored');
             return { model: agentModel, scenarioType: 'default' };
@@ -418,6 +422,56 @@ const sessionProjectCache = new LRUCache<string, string>({
 const sessionAgentModelCache = new LRUCache<string, string>({
   max: 1000,
 });
+
+// Story 3.2: Cache metrics for monitoring and validation
+interface CacheMetrics {
+  hits: number;
+  misses: number;
+  evictions: number;
+}
+
+const cacheMetrics: CacheMetrics = {
+  hits: 0,
+  misses: 0,
+  evictions: 0,
+};
+
+/**
+ * Get current cache metrics and calculate hit rate
+ */
+export const getCacheMetrics = (): CacheMetrics & { hitRate: number; size: number } => {
+  const total = cacheMetrics.hits + cacheMetrics.misses;
+  const hitRate = total > 0 ? (cacheMetrics.hits / total) * 100 : 0;
+  return {
+    ...cacheMetrics,
+    hitRate,
+    size: sessionAgentModelCache.size,
+  };
+};
+
+/**
+ * Reset cache metrics (useful for testing or manual measurement periods)
+ */
+export const resetCacheMetrics = (): void => {
+  cacheMetrics.hits = 0;
+  cacheMetrics.misses = 0;
+  cacheMetrics.evictions = 0;
+};
+
+/**
+ * Log cache metrics summary (call periodically to monitor cache performance)
+ */
+export const logCacheMetrics = (context?: string): void => {
+  const metrics = getCacheMetrics();
+  const prefix = context ? `[${context}]` : '';
+  console.log(`${prefix} Cache Metrics:`, {
+    hits: metrics.hits,
+    misses: metrics.misses,
+    hitRate: `${metrics.hitRate.toFixed(2)}%`,
+    size: metrics.size,
+    evictions: metrics.evictions,
+  });
+};
 
 export const searchProjectBySession = async (
   sessionId: string

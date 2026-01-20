@@ -362,4 +362,288 @@ describe('Story 3.1: Router Integration with Session-Based Caching', () => {
       // Note: Actual logging happens in router.ts
     });
   });
+
+  describe('Story 3.2: Eviction Behavior Tests (AC 4)', () => {
+    test('should evict LRU entry when exceeding 1000 entries', async () => {
+      const sessionId = 'eviction-test-session';
+
+      // Fill cache to capacity (1000 entries)
+      for (let i = 0; i < 1000; i++) {
+        const cacheKey = `${sessionId}:${project1Id}:agent-${i}`;
+        sessionAgentModelCache.set(cacheKey, `model-${i}`);
+      }
+
+      expect(sessionAgentModelCache.size).toBe(1000);
+
+      // Add 1001st entry to trigger eviction
+      const cacheKey1001 = `${sessionId}:${project1Id}:agent-1000`;
+      sessionAgentModelCache.set(cacheKey1001, 'model-1000');
+
+      // Cache size should still be 1000 (LRU eviction)
+      expect(sessionAgentModelCache.size).toBe(1000);
+
+      // Oldest entry should be evicted
+      const oldestKey = `${sessionId}:${project1Id}:agent-0`;
+      const evictedEntry = sessionAgentModelCache.get(oldestKey);
+      expect(evictedEntry).toBeUndefined();
+    });
+
+    test('should evict in < 10ms per NFR-P4', async () => {
+      const sessionId = 'eviction-perf-test';
+
+      // Fill cache to capacity
+      for (let i = 0; i < 1000; i++) {
+        const cacheKey = `${sessionId}:${project1Id}:agent-${i}`;
+        sessionAgentModelCache.set(cacheKey, `model-${i}`);
+      }
+
+      // Measure eviction latency
+      const start = performance.now();
+      const cacheKey1001 = `${sessionId}:${project1Id}:agent-1000`;
+      sessionAgentModelCache.set(cacheKey1001, 'model-1000');
+      const evictionLatency = performance.now() - start;
+
+      // Eviction should complete in < 10ms (NFR-P4)
+      expect(evictionLatency).toBeLessThan(10);
+    });
+
+    test('should verify evicted entry triggers cache miss on next lookup', async () => {
+      const sessionId = 'eviction-miss-test';
+
+      // Fill cache to capacity (1000 entries)
+      const keys: string[] = [];
+      for (let i = 0; i < 1000; i++) {
+        const cacheKey = `${sessionId}:${project1Id}:agent-${i}`;
+        keys.push(cacheKey);
+        sessionAgentModelCache.set(cacheKey, `model-${i}`);
+      }
+
+      // Verify cache is at capacity
+      expect(sessionAgentModelCache.size).toBe(1000);
+
+      // Trigger eviction by adding 1001st entry
+      const overflowKey = `${sessionId}:${project1Id}:agent-overflow`;
+      sessionAgentModelCache.set(overflowKey, 'model-overflow');
+
+      // Cache should still be at max capacity (one entry evicted)
+      expect(sessionAgentModelCache.size).toBe(1000);
+
+      // Find which entry was evicted (at least one must be evicted)
+      let evictedCount = 0;
+      for (const key of keys) {
+        if (sessionAgentModelCache.get(key) === undefined) {
+          evictedCount++;
+        }
+      }
+
+      // At least one early entry should be evicted
+      expect(evictedCount).toBeGreaterThan(0);
+
+      // Cache miss latency should still be < 5ms
+      const start = performance.now();
+      const result = sessionAgentModelCache.get(keys[0]);
+      const missLatency = performance.now() - start;
+
+      // Whether hit or miss, latency should be < 5ms
+      expect(missLatency).toBeLessThan(5);
+    });
+
+    test('should maintain correct LRU order with mixed access patterns', async () => {
+      const sessionId = 'lru-order-test';
+
+      // Add 100 entries
+      const keys: string[] = [];
+      for (let i = 0; i < 100; i++) {
+        const cacheKey = `${sessionId}:${project1Id}:agent-${i}`;
+        keys.push(cacheKey);
+        sessionAgentModelCache.set(cacheKey, `model-${i}`);
+      }
+
+      // Refresh some entries by setting them again (this updates their LRU position)
+      sessionAgentModelCache.set(keys[50], 'model-50-refreshed');
+      sessionAgentModelCache.set(keys[75], 'model-75-refreshed');
+      sessionAgentModelCache.set(keys[25], 'model-25-refreshed');
+
+      // Fill cache to capacity
+      for (let i = 100; i < 1000; i++) {
+        const cacheKey = `${sessionId}:${project1Id}:agent-${i}`;
+        sessionAgentModelCache.set(cacheKey, `model-${i}`);
+      }
+
+      // Add one more to trigger eviction
+      sessionAgentModelCache.set(`${sessionId}:${project1Id}:agent-1000`, 'model-1000');
+
+      // Entries that were refreshed should still exist (more recently used)
+      expect(sessionAgentModelCache.get(keys[50])).toBe('model-50-refreshed');
+      expect(sessionAgentModelCache.get(keys[75])).toBe('model-75-refreshed');
+      expect(sessionAgentModelCache.get(keys[25])).toBe('model-25-refreshed');
+
+      // At least some of the non-refreshed entries should be evicted
+      let evictedCount = 0;
+      for (let i = 0; i < 20; i++) {
+        if (i !== 25 && i !== 50 && i !== 75) {
+          if (sessionAgentModelCache.get(keys[i]) === undefined) {
+            evictedCount++;
+          }
+        }
+      }
+      // Some early entries should be evicted
+      expect(evictedCount).toBeGreaterThan(0);
+    });
+
+    test('should handle rapid sequential evictions efficiently', async () => {
+      const sessionId = 'rapid-eviction-test';
+      const evictionLatencies: number[] = [];
+
+      // Fill cache to capacity
+      for (let i = 0; i < 1000; i++) {
+        const cacheKey = `${sessionId}:${project1Id}:agent-${i}`;
+        sessionAgentModelCache.set(cacheKey, `model-${i}`);
+      }
+
+      // Trigger 100 rapid evictions
+      for (let i = 1000; i < 1100; i++) {
+        const start = performance.now();
+        const cacheKey = `${sessionId}:${project1Id}:agent-${i}`;
+        sessionAgentModelCache.set(cacheKey, `model-${i}`);
+        const end = performance.now();
+        evictionLatencies.push(end - start);
+      }
+
+      // All evictions should be < 10ms
+      const maxLatency = Math.max(...evictionLatencies);
+      const avgLatency = evictionLatencies.reduce((a, b) => a + b, 0) / evictionLatencies.length;
+
+      expect(maxLatency).toBeLessThan(10);
+      expect(avgLatency).toBeLessThan(5);
+    });
+  });
+
+  describe('Story 3.2: Memory Leak Detection Tests (AC 5)', () => {
+    test('should not leak memory under sustained load of 10000 requests', async () => {
+      const sessionId = 'memory-leak-test';
+      const initialMemory = process.memoryUsage().heapUsed;
+
+      // Simulate 10,000 requests with cache churn (100 unique agents)
+      for (let i = 0; i < 10000; i++) {
+        const agentIndex = i % 100;
+        const cacheKey = `${sessionId}:${project1Id}:agent-${agentIndex}`;
+        sessionAgentModelCache.set(cacheKey, `model-${agentIndex}`);
+      }
+
+      const afterLoadMemory = process.memoryUsage().heapUsed;
+      const growthBeforeGC = (afterLoadMemory - initialMemory) / 1024 / 1024;
+
+      // Force garbage collection if available
+      if (global.gc) {
+        global.gc();
+      }
+
+      const finalMemory = process.memoryUsage().heapUsed;
+      const growthAfterGC = (finalMemory - initialMemory) / 1024 / 1024;
+
+      // Memory growth should be < 50MB (NFR-SC3)
+      expect(growthAfterGC).toBeLessThan(50);
+    });
+
+    test('should maintain stable memory size with bounded cache', async () => {
+      const sessionId = 'stable-memory-test';
+      const memorySnapshots: number[] = [];
+
+      // Take initial snapshot
+      memorySnapshots.push(process.memoryUsage().heapUsed);
+
+      // Fill cache to capacity
+      for (let i = 0; i < 1000; i++) {
+        const cacheKey = `${sessionId}:${project1Id}:agent-${i}`;
+        sessionAgentModelCache.set(cacheKey, `model-${i}`);
+      }
+      memorySnapshots.push(process.memoryUsage().heapUsed);
+
+      // Perform 5000 more operations (cache will evict old entries)
+      for (let i = 1000; i < 6000; i++) {
+        const cacheKey = `${sessionId}:${project1Id}:agent-${i}`;
+        sessionAgentModelCache.set(cacheKey, `model-${i}`);
+
+        // Sample memory every 1000 operations
+        if (i % 1000 === 0) {
+          memorySnapshots.push(process.memoryUsage().heapUsed);
+        }
+      }
+
+      // Final snapshot after GC
+      if (global.gc) {
+        global.gc();
+      }
+      memorySnapshots.push(process.memoryUsage().heapUsed);
+
+      // Memory should not grow unboundedly
+      const initialMB = memorySnapshots[0] / 1024 / 1024;
+      const finalMB = memorySnapshots[memorySnapshots.length - 1] / 1024 / 1024;
+      const growthMB = finalMB - initialMB;
+
+      expect(growthMB).toBeLessThan(50);
+
+      // Cache size should remain at max (1000)
+      expect(sessionAgentModelCache.size).toBe(1000);
+    });
+
+    test('should handle cache churn without accumulating memory', async () => {
+      const sessionId = 'cache-churn-test';
+      const uniqueAgents = 200;
+
+      // Repeatedly add and remove entries
+      for (let cycle = 0; cycle < 50; cycle++) {
+        for (let i = 0; i < uniqueAgents; i++) {
+          const cacheKey = `${sessionId}:${project1Id}:agent-${i}`;
+          sessionAgentModelCache.set(cacheKey, `model-cycle-${cycle}-${i}`);
+        }
+      }
+
+      // Force GC
+      if (global.gc) {
+        global.gc();
+      }
+
+      // Cache should still be bounded
+      expect(sessionAgentModelCache.size).toBeLessThanOrEqual(1000);
+
+      // Memory should be reasonable
+      const heapUsedMB = process.memoryUsage().heapUsed / 1024 / 1024;
+      expect(heapUsedMB).toBeGreaterThan(0);
+      expect(heapUsedMB).toBeLessThan(500); // Reasonable upper bound
+    });
+
+    test('should not leak with large value entries', async () => {
+      const sessionId = 'large-values-test';
+      const initialMemory = process.memoryUsage().heapUsed;
+
+      // Use large string values
+      const largeValue = 'x'.repeat(10000); // 10KB per entry
+
+      // Fill cache with large values
+      for (let i = 0; i < 500; i++) {
+        const cacheKey = `${sessionId}:${project1Id}:agent-${i}`;
+        sessionAgentModelCache.set(cacheKey, largeValue + i);
+      }
+
+      // Force eviction with more entries
+      for (let i = 500; i < 1500; i++) {
+        const cacheKey = `${sessionId}:${project1Id}:agent-${i}`;
+        sessionAgentModelCache.set(cacheKey, largeValue + i);
+      }
+
+      // Force GC
+      if (global.gc) {
+        global.gc();
+      }
+
+      const finalMemory = process.memoryUsage().heapUsed;
+      const growthMB = (finalMemory - initialMemory) / 1024 / 1024;
+
+      // Even with large values, memory should be bounded
+      expect(growthMB).toBeLessThan(100);
+      expect(sessionAgentModelCache.size).toBe(1000);
+    });
+  });
 });
