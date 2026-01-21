@@ -18,4 +18,7 @@ module.exports = {
     '^@CCR/shared$': '<rootDir>/packages/shared/src/index.ts',
     '^@CCR/(.*)$': '<rootDir>/packages/$1/src',
   },
+  // Fix worker process cleanup issues
+  maxWorkers: '50%',
+  forceExit: true,
 };
