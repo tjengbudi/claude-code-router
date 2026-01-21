@@ -3,7 +3,6 @@ import path from 'path';
 import type { RescanResult, AgentConfig } from '@CCR/shared';
 import { interactiveModelConfiguration, getAvailableModels, VALUE_DEFAULT, ConfigurationSession } from '../interactive/modelConfig';
 import { confirm, select } from '@inquirer/prompts';
-import { ExitPromptError } from '@inquirer/prompts';
 
 // ANSI color codes for consistent output
 const RESET = "\x1B[0m";
@@ -158,7 +157,7 @@ async function handleProjectList(): Promise<void> {
  * Handle 'project scan' command (Story 1.4: Rescan project for new or deleted agents)
  * @param args - Command arguments (e.g., ['<project-id>'])
  */
-async function handleProjectScan(args: string[]): Promise<void> {
+export async function handleProjectScan(args: string[]): Promise<void> {
   const projectId = args[0];
 
   if (!projectId) {
@@ -239,7 +238,7 @@ async function handleProjectScan(args: string[]): Promise<void> {
           console.log('New agents will use Router.default until configured.');
         }
       } catch (error) {
-        if (error instanceof ExitPromptError) {
+        if ((error as Error).name === 'ExitPromptError') {
           console.log('\nConfiguration interrupted');
         } else {
           throw error;
@@ -247,11 +246,15 @@ async function handleProjectScan(args: string[]): Promise<void> {
       }
     }
   } catch (error) {
-    console.error(`✗ Error: ${(error as Error).message}`);
+    const errorMsg = (error as Error).message;
+    console.error(`✗ Error: ${errorMsg}`);
 
-    if ((error as Error).message.includes('Invalid project ID')) {
+    // AC3: Provide helpful guidance for project not found errors
+    if (errorMsg.includes('Project not found') || errorMsg.includes('Invalid project ID')) {
       console.log('\nList available projects: ccr project list');
     }
+    // AC3: Exit with non-zero status code on error
+    process.exit(1);
   }
 }
 
