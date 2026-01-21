@@ -37,6 +37,9 @@ describe('Story 4.5: Git-Shareable New Agent Workflow', () => {
   let pm: ProjectManager;
   let project: any;
 
+  // Suppress expected console.debug messages during tests
+  let consoleDebugSpy: jest.SpyInstance;
+
   beforeAll(() => {
     // Check if git is available
     try {
@@ -48,6 +51,16 @@ describe('Story 4.5: Git-Shareable New Agent Workflow', () => {
   });
 
   beforeEach(async () => {
+    // Suppress expected console.debug messages about missing projects.json
+    consoleDebugSpy = jest.spyOn(console, 'debug').mockImplementation((message) => {
+      // Only suppress expected ENOENT errors for projects.json
+      if (typeof message === 'string' && message.includes('Failed to load projects.json: ENOENT')) {
+        return;
+      }
+      // Let other debug messages through
+      console.log(message);
+    });
+
     // Create test directory
     await mkdir(TEST_PROJECTS_DIR, { recursive: true });
     if (existsSync(TEST_PROJECTS_FILE)) {
@@ -74,6 +87,11 @@ describe('Story 4.5: Git-Shareable New Agent Workflow', () => {
   });
 
   afterEach(async () => {
+    // Restore console.debug
+    if (consoleDebugSpy) {
+      consoleDebugSpy.mockRestore();
+    }
+
     // Clean up test files and directories
     if (existsSync(TEST_PROJECTS_FILE)) {
       await rm(TEST_PROJECTS_FILE);
@@ -495,7 +513,7 @@ describe('Story 4.5: Git-Shareable New Agent Workflow', () => {
         // Member B configures Claude Sonnet
         await pmB.setAgentModel(projectB.id, agentB!.id, 'anthropic,claude-sonnet-4');
 
-        // Verify different configs in各自的 projects.json
+        // Verify different configs in their respective projects.json
         const modelA = await pmA.getModelByAgentId(agentA!.id);
         const modelB = await pmB.getModelByAgentId(agentB!.id);
 
@@ -778,49 +796,70 @@ describe('Story 4.5: Git-Shareable New Agent Workflow', () => {
 
   describe('Task 6: Validate existing documentation (AC1-5)', () => {
     describe('Subtask 6.1: Review docs/docs/team/git-workflow.md (258 lines)', () => {
-      it('should have git-workflow.md file exist', () => {
+      it('should have git-workflow.md file exist', async () => {
         // From packages/shared/__tests__/ go up 3 levels to reach project root, then into docs
         const docsPath = path.join(__dirname, '../../../docs/docs/team/git-workflow.md');
         // Verify documentation file exists (checked during story development)
         // The docs have been updated to reflect the new architecture
         expect(existsSync(docsPath)).toBe(true);
+
+        // Validate actual content
+        const content = await readFile(docsPath, 'utf-8');
+
+        // Must document the NEW architecture (Story 4.5)
+        expect(content).toContain('CCR-AGENT-ID');
+        expect(content).toContain('~/.claude-code-router/');
+        expect(content).toContain('projects.json');
+
+        // Must explain what's shared vs local
+        expect(content.toLowerCase()).toContain('shared');
+        expect(content.toLowerCase()).toContain('local');
+
+        // Must document git workflow
+        expect(content.toLowerCase()).toContain('git');
+        expect(content.toLowerCase()).toContain('commit');
       });
 
-      it('should document the NEW workflow (agent files shared, projects.json local)', () => {
+      it('should document the NEW workflow (agent files shared, projects.json local)', async () => {
+        const docsPath = path.join(__dirname, '../../../docs/docs/team/git-workflow.md');
+        const content = await readFile(docsPath, 'utf-8');
+
         // Key documentation requirements:
         // 1. Agent .md files with CCR-AGENT-ID are committed to git
+        expect(content).toContain('.md');
+        expect(content).toContain('CCR-AGENT-ID');
+
         // 2. projects.json stays in ~/.claude-code-router/ (NOT committed)
+        expect(content).toContain('~/.claude-code-router/');
+        expect(content).toContain('projects.json');
+
         // 3. Each team member configures independently
-
-        // This test documents the expected workflow
-        const expectedWorkflow = {
-          shared: ['Agent .md files with CCR-AGENT-ID tags'],
-          notShared: ['projects.json (stays in ~/.claude-code-router/)'],
-          independentConfig: true
-        };
-
-        expect(expectedWorkflow.shared).toContain('Agent .md files with CCR-AGENT-ID tags');
-        expect(expectedWorkflow.notShared).toContain('projects.json (stays in ~/.claude-code-router/)');
+        expect(content.toLowerCase()).toContain('independent');
       });
     });
 
     describe('Subtask 6.2: Review docs/docs/team/onboarding.md (282 lines)', () => {
-      it('should document onboarding for new architecture', () => {
+      it('should document onboarding for new architecture', async () => {
+        const docsPath = path.join(__dirname, '../../../docs/docs/team/onboarding.md');
+        expect(existsSync(docsPath)).toBe(true);
+
+        const content = await readFile(docsPath, 'utf-8');
+
         // Onboarding should describe:
         // 1. Clone repo to get agent files
+        expect(content.toLowerCase()).toContain('clone');
+        expect(content.toLowerCase()).toContain('git');
+
         // 2. Run ccr project scan to detect agents
+        expect(content).toContain('ccr project scan');
+
         // 3. Configure models interactively
-        // 4. Start working
+        expect(content.toLowerCase()).toContain('configure');
+        expect(content.toLowerCase()).toContain('model');
 
-        const expectedOnboarding = [
-          'Clone repository',
-          'Run ccr project scan',
-          'Configure models interactively',
-          'Agent files come from git'
-        ];
-
-        expect(expectedOnboarding).toContain('Clone repository');
-        expect(expectedOnboarding).toContain('Run ccr project scan');
+        // 4. Agent files come from git
+        expect(content).toContain('agent');
+        expect(content).toContain('.md');
       });
     });
 
