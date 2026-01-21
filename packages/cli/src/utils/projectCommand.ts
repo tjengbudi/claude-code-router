@@ -1,7 +1,7 @@
 import { ProjectManager, Validators, PROJECTS_FILE } from '@CCR/shared';
 import path from 'path';
 import type { RescanResult, AgentConfig } from '@CCR/shared';
-import { interactiveModelConfiguration, getAvailableModels, VALUE_DEFAULT } from '../interactive/modelConfig';
+import { interactiveModelConfiguration, getAvailableModels, VALUE_DEFAULT, ConfigurationSession } from '../interactive/modelConfig';
 import { confirm, select } from '@inquirer/prompts';
 import { ExitPromptError } from '@inquirer/prompts';
 
@@ -10,60 +10,7 @@ const RESET = "\x1B[0m";
 const DIM = "\x1B[2m";
 const GREEN = "\x1B[32m";
 const YELLOW = "\x1B[33m";
-
-/**
- * Configuration change tracking (Story 4.3 - atomic batch saves)
- */
-interface ConfigurationChange {
-  agentId: string;
-  agentName: string;
-  oldModel: string | undefined;
-  newModel: string | undefined;
-}
-
-/**
- * Configuration session for tracking changes with transaction safety (Story 4.3)
- * Ensures atomic batch saves - all changes saved or none (AC4)
- */
-class NewAgentConfigurationSession {
-  private changes: Map<string, ConfigurationChange> = new Map();
-  private savedAgentIds: Set<string> = new Set();
-
-  addChange(agentId: string, agentName: string, oldModel: string | undefined, newModel: string | undefined): void {
-    this.changes.set(agentId, { agentId, agentName, oldModel, newModel });
-  }
-
-  async save(projectId: string): Promise<void> {
-    const pm = new ProjectManager(PROJECTS_FILE);
-    this.savedAgentIds.clear();
-
-    try {
-      // Atomic batch save - all or nothing (AC4)
-      for (const [agentId, change] of this.changes) {
-        await pm.setAgentModel(projectId, agentId, change.newModel);
-        this.savedAgentIds.add(agentId);
-      }
-    } catch (error) {
-      // Rollback: clear saved agent IDs on failure
-      this.savedAgentIds.clear();
-      throw error;
-    }
-  }
-
-  getSummary(): string[] {
-    return Array.from(this.changes.values()).map(change =>
-      `  - ${change.agentName} → ${change.newModel || '[default]'}`
-    );
-  }
-
-  getCount(): number {
-    return this.changes.size;
-  }
-
-  getSavedCount(): number {
-    return this.savedAgentIds.size;
-  }
-}
+const RED = "\x1B[31m";
 
 /**
  * Handle project commands
@@ -286,7 +233,7 @@ async function handleProjectScan(args: string[]): Promise<void> {
             await configureNewAgentsInteractive(projectId, newAgentConfigs);
           }
         } else {
-          // Skip configuration path (AC5)
+          // AC5: Skip configuration path
           console.log('\nNew agents added without model configuration.');
           console.log('Configure later with: ccr project configure <id>');
           console.log('New agents will use Router.default until configured.');
@@ -321,10 +268,6 @@ async function configureNewAgentsInteractive(
   newAgents: AgentConfig[]
 ): Promise<void> {
   const pm = new ProjectManager(PROJECTS_FILE);
-
-  if (newAgents.length === 0) {
-    return; // AC1a: Empty new agents handling
-  }
 
   console.log(`${GREEN}\nConfiguring new agents...${RESET}`);
 
@@ -379,7 +322,7 @@ async function configureNewAgentsInteractive(
   }
 
   // Use ConfigurationSession for atomic batch saves (AC4)
-  const session = new NewAgentConfigurationSession();
+  const session = new ConfigurationSession();
 
   if (applySameModelToAll) {
     // Bulk mode: add all agents with same model
@@ -424,7 +367,7 @@ async function configureNewAgentsInteractive(
 
       } catch (error: any) {
         if (error.name === 'ExitPromptError') {
-          console.log(`${YELLOW}\nConfiguration interrupted${RESET}`);
+          console.log(`${YELLOW}\nConfiguration interrupted, no changes saved${RESET}`);
           return;
         }
         throw error;

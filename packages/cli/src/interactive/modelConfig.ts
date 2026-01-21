@@ -39,7 +39,7 @@ interface ConfigurationChange {
 /**
  * Configuration session for tracking changes with transaction safety
  */
-class ConfigurationSession {
+export class ConfigurationSession {
   private changes: Map<string, ConfigurationChange> = new Map();
   private savedAgentIds: Set<string> = new Set();
 
@@ -272,7 +272,7 @@ export async function interactiveModelConfiguration(projectId: string): Promise<
         default: defaultModel
       });
 
-      // Validate selection before storing (HIGH-4 fix)
+      // Validate selection before storing (HIGH-2 fix - moved before addChange)
       const actualModel = selectedModel === VALUE_DEFAULT ? undefined : selectedModel;
       if (actualModel !== undefined && !Validators.isValidModelString(actualModel)) {
         console.error(`${RED}✗ Error: Invalid model format: ${actualModel}${RESET}`);
@@ -280,7 +280,7 @@ export async function interactiveModelConfiguration(projectId: string): Promise<
         continue; // Skip this change and return to agent selection
       }
 
-      // Track the change
+      // Track the change (after validation)
       session.addChange(agent.id, agent.name, agent.model, actualModel);
 
       // Update in-memory cloned agent state for display
