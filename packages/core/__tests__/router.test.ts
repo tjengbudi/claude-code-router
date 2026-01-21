@@ -94,7 +94,12 @@ describe('Story 3.1: Router Integration with Session-Based Caching', () => {
       await projectManager.setAgentModel(project2Id, agent2Id, 'anthropic,claude-opus');
     });
 
+    // Priority: P0
     test('3.1-AC1-001: should store model in cache after first lookup', async () => {
+      // Given: A session with agent model configured
+      // When: Looking up model for the first time
+      // Then: Model should be stored in cache
+
       const sessionId = 'test-session-123';
       const cacheKey = `${sessionId}:${project1Id}:${agent1Id}`;
 
@@ -107,7 +112,12 @@ describe('Story 3.1: Router Integration with Session-Based Caching', () => {
       expect(cachedModel).toBe('openai,gpt-4o');
     });
 
+    // Priority: P0
     test('3.1-AC1-002: should return cached model on second lookup (cache hit)', async () => {
+      // Given: A model already cached for a session
+      // When: Looking up the same model again
+      // Then: Should return cached model without database lookup
+
       const sessionId = 'test-session-456';
       const cacheKey = `${sessionId}:${project1Id}:${agent1Id}`;
 
@@ -121,7 +131,12 @@ describe('Story 3.1: Router Integration with Session-Based Caching', () => {
       expect(cachedModel).toBe(model1);
     });
 
+    // Priority: P0
     test('3.1-AC1-003: should return undefined on cache miss', async () => {
+      // Given: An empty cache for a session
+      // When: Looking up a model that hasn't been cached
+      // Then: Should return undefined (cache miss)
+
       const sessionId = 'test-session-789';
       const cacheKey = `${sessionId}:${project1Id}:${agent1Id}`;
 
@@ -130,7 +145,12 @@ describe('Story 3.1: Router Integration with Session-Based Caching', () => {
       expect(cachedModel).toBeUndefined();
     });
 
+    // Priority: P0
     test('3.1-AC2-001: should isolate cache entries across different sessions', async () => {
+      // Given: Two different user sessions
+      // When: Caching model for one session
+      // Then: Other session should not see the cached model
+
       const session1 = 'session-001';
       const session2 = 'session-002';
 
@@ -149,7 +169,12 @@ describe('Story 3.1: Router Integration with Session-Based Caching', () => {
       expect(cachedModel1).toBe('openai,gpt-4o');
     });
 
+    // Priority: P0
     test('3.1-AC2-002: should isolate cache entries across different projects', async () => {
+      // Given: Two different projects in the same session
+      // When: Caching models for each project
+      // Then: Each project should have isolated cache entries
+
       const sessionId = 'test-session-multi-project';
 
       const cacheKey1 = `${sessionId}:${project1Id}:${agent1Id}`;
@@ -168,7 +193,12 @@ describe('Story 3.1: Router Integration with Session-Based Caching', () => {
       expect(model1).not.toBe(model2);
     });
 
+    // Priority: P0
     test('3.1-AC2-003: should isolate cache entries across different agents', async () => {
+      // Given: Two different agents in the same session and project
+      // When: Caching model for one agent
+      // Then: Other agent should not see the cached model
+
       const sessionId = 'test-session-multi-agent';
 
       const cacheKey1 = `${sessionId}:${project1Id}:${agent1Id}`;
@@ -185,7 +215,12 @@ describe('Story 3.1: Router Integration with Session-Based Caching', () => {
       expect(cachedModel2).toBeUndefined(); // agent2 not cached for project1
     });
 
+    // Priority: P1
     test('3.1-AC3-001: should use enhanced cache key format with three components', async () => {
+      // Given: Session ID, project ID, and agent ID
+      // When: Constructing cache key
+      // Then: Should use format ${sessionId}:${projectId}:${agentId}
+
       const sessionId = 'test-session-format';
       const projectId = project1Id;
       const agentId = agent1Id;
@@ -201,7 +236,12 @@ describe('Story 3.1: Router Integration with Session-Based Caching', () => {
       expect(cacheKey.split(':')[2]).toBe(agentId);
     });
 
+    // Priority: P1
     test('3.1-AC3-002: should handle default session ID when user_id missing', async () => {
+      // Given: Request without user_id (session ID defaults to 'default')
+      // When: Caching model with default session ID
+      // Then: Should use 'default' as session ID in cache key
+
       const sessionId = 'default'; // From extractSessionId fallback
       const cacheKey = `${sessionId}:${project1Id}:${agent1Id}`;
 
@@ -211,7 +251,12 @@ describe('Story 3.1: Router Integration with Session-Based Caching', () => {
       expect(cachedModel).toBe('openai,gpt-4o');
     });
 
+    // Priority: P1
     test('3.1-AC4-001: should handle LRU cache max entries (1000)', async () => {
+      // Given: LRU cache with max 1000 entries
+      // When: Adding entries to cache
+      // Then: Cache should respect max size limit
+
       // Verify cache max entries setting
       const cacheMax = sessionAgentModelCache.max;
       expect(cacheMax).toBe(1000);
@@ -238,7 +283,12 @@ describe('Story 3.1: Router Integration with Session-Based Caching', () => {
       await projectManager.setAgentModel(project2Id, agent2Id, 'anthropic,claude-opus');
     });
 
+    // Priority: P0
     test('3.1-AC5-001: should simulate complete routing flow with cache', async () => {
+      // Given: A complete routing request with session, project, and agent
+      // When: Performing cache lookup and fallback to ProjectManager
+      // Then: Should cache the result for future lookups
+
       const sessionId = 'session-routing-test';
       const agentId = agent1Id;
       const projectId = await projectManager.detectProject(agentId);
@@ -264,7 +314,12 @@ describe('Story 3.1: Router Integration with Session-Based Caching', () => {
       expect(cachedModel).toBe('openai,gpt-4o');
     });
 
+    // Priority: P0
     test('3.1-AC6-001: should fallback to Router.default when agent not found', async () => {
+      // Given: A non-existent agent ID
+      // When: Attempting to detect project
+      // Then: Should return undefined and fallback to Router.default
+
       const fakeAgentId = uuidv4();
       const sessionId = 'session-fallback-test';
 
@@ -277,7 +332,12 @@ describe('Story 3.1: Router Integration with Session-Based Caching', () => {
       expect(projectId).toBeUndefined();
     });
 
+    // Priority: P0
     test('3.1-AC6-002: should handle agent with no model configured', async () => {
+      // Given: An agent with no model configured
+      // When: Looking up model for the agent
+      // Then: Should return undefined and fallback to Router.default
+
       // Remove model configuration
       await projectManager.setAgentModel(project1Id, agent1Id, undefined);
 
@@ -298,7 +358,12 @@ describe('Story 3.1: Router Integration with Session-Based Caching', () => {
   });
 
   describe('Performance Requirements for Story 3.1', () => {
+    // Priority: P1
     test('3.1-AC7-001: should complete cache lookup in less than 5ms (NFR-P1 target)', async () => {
+      // Given: A pre-populated cache with model data
+      // When: Performing 1000 cache lookups
+      // Then: Average lookup time should be < 5ms per NFR-P1
+
       const sessionId = 'perf-test-session';
       const cacheKey = `${sessionId}:${project1Id}:${agent1Id}`;
 
@@ -319,7 +384,12 @@ describe('Story 3.1: Router Integration with Session-Based Caching', () => {
       expect(avgTime).toBeLessThan(5);
     });
 
+    // Priority: P2
     test('3.1-AC7-002: should complete project detection in reasonable time', async () => {
+      // Given: Multiple project detection requests
+      // When: Detecting project for agent 100 times
+      // Then: Average detection time should be < 20ms
+
       const iterations = 100;
       const startTime = Date.now();
 
@@ -337,7 +407,12 @@ describe('Story 3.1: Router Integration with Session-Based Caching', () => {
   });
 
   describe('Cache Logging Requirements (Story 3.1)', () => {
+    // Priority: P2
     test('3.1-AC8-001: should log cache hits at debug level', async () => {
+      // Given: A pre-populated cache entry
+      // When: Performing cache lookup (cache hit)
+      // Then: Should log at debug level (verified in router.ts)
+
       const sessionId = 'logging-test-hit';
       const cacheKey = `${sessionId}:${project1Id}:${agent1Id}`;
 
@@ -351,7 +426,12 @@ describe('Story 3.1: Router Integration with Session-Based Caching', () => {
       // Note: Actual logging happens in router.ts
     });
 
+    // Priority: P2
     test('3.1-AC8-002: should log cache misses at debug level', async () => {
+      // Given: An empty cache
+      // When: Performing cache lookup (cache miss)
+      // Then: Should log at debug level (verified in router.ts)
+
       const sessionId = 'logging-test-miss';
       const cacheKey = `${sessionId}:${project1Id}:${agent1Id}`;
 
@@ -364,7 +444,12 @@ describe('Story 3.1: Router Integration with Session-Based Caching', () => {
   });
 
   describe('Story 3.2: Eviction Behavior Tests (AC 4)', () => {
+    // Priority: P1
     test('3.1-AC9-001: should evict LRU entry when exceeding 1000 entries', async () => {
+      // Given: Cache filled to capacity (1000 entries)
+      // When: Adding 1001st entry
+      // Then: Should evict least recently used entry
+
       const sessionId = 'eviction-test-session';
 
       // Fill cache to capacity (1000 entries)
@@ -388,7 +473,12 @@ describe('Story 3.1: Router Integration with Session-Based Caching', () => {
       expect(evictedEntry).toBeUndefined();
     });
 
+    // Priority: P1
     test('3.1-AC9-002: should evict in < 10ms per NFR-P4', async () => {
+      // Given: Cache at full capacity (1000 entries)
+      // When: Adding new entry to trigger eviction
+      // Then: Eviction should complete in < 10ms per NFR-P4
+
       const sessionId = 'eviction-perf-test';
 
       // Fill cache to capacity
@@ -407,7 +497,12 @@ describe('Story 3.1: Router Integration with Session-Based Caching', () => {
       expect(evictionLatency).toBeLessThan(10);
     });
 
+    // Priority: P2
     test('3.1-AC9-003: should verify evicted entry triggers cache miss on next lookup', async () => {
+      // Given: Cache at capacity with eviction triggered
+      // When: Looking up evicted entry
+      // Then: Should return cache miss with latency < 5ms
+
       const sessionId = 'eviction-miss-test';
 
       // Fill cache to capacity (1000 entries)
@@ -448,7 +543,12 @@ describe('Story 3.1: Router Integration with Session-Based Caching', () => {
       expect(missLatency).toBeLessThan(5);
     });
 
+    // Priority: P2
     test('3.1-AC9-004: should maintain correct LRU order with mixed access patterns', async () => {
+      // Given: Cache with mixed access patterns (some entries refreshed)
+      // When: Filling cache to capacity and triggering eviction
+      // Then: Recently accessed entries should remain, old entries evicted
+
       const sessionId = 'lru-order-test';
 
       // Add 100 entries
@@ -491,7 +591,12 @@ describe('Story 3.1: Router Integration with Session-Based Caching', () => {
       expect(evictedCount).toBeGreaterThan(0);
     });
 
+    // Priority: P1
     test('3.1-AC9-005: should handle rapid sequential evictions efficiently', async () => {
+      // Given: Cache at capacity with rapid sequential additions
+      // When: Triggering 100 rapid evictions
+      // Then: All evictions should be < 10ms, average < 5ms
+
       const sessionId = 'rapid-eviction-test';
       const evictionLatencies: number[] = [];
 
@@ -520,7 +625,12 @@ describe('Story 3.1: Router Integration with Session-Based Caching', () => {
   });
 
   describe('Story 3.2: Memory Leak Detection Tests (AC 5)', () => {
+    // Priority: P2
     test('3.1-AC10-001: should not leak memory under sustained load of 10000 requests', async () => {
+      // Given: Sustained load of 10,000 requests with cache churn
+      // When: Simulating high-volume request patterns
+      // Then: Memory growth should be < 50MB after GC (NFR-SC3)
+
       const sessionId = 'memory-leak-test';
       const initialMemory = process.memoryUsage().heapUsed;
 
@@ -546,7 +656,12 @@ describe('Story 3.1: Router Integration with Session-Based Caching', () => {
       expect(growthAfterGC).toBeLessThan(50);
     });
 
+    // Priority: P2
     test('3.1-AC10-002: should maintain stable memory size with bounded cache', async () => {
+      // Given: Cache operations over extended period
+      // When: Performing 6000 cache operations with evictions
+      // Then: Memory should remain stable (< 50MB growth)
+
       const sessionId = 'stable-memory-test';
       const memorySnapshots: number[] = [];
 
@@ -588,7 +703,12 @@ describe('Story 3.1: Router Integration with Session-Based Caching', () => {
       expect(sessionAgentModelCache.size).toBe(1000);
     });
 
+    // Priority: P2
     test('3.1-AC10-003: should handle cache churn without accumulating memory', async () => {
+      // Given: Repeated cache churn cycles (50 cycles, 200 agents each)
+      // When: Adding and evicting entries repeatedly
+      // Then: Cache should remain bounded, memory reasonable (< 500MB)
+
       const sessionId = 'cache-churn-test';
       const uniqueAgents = 200;
 
@@ -614,7 +734,12 @@ describe('Story 3.1: Router Integration with Session-Based Caching', () => {
       expect(heapUsedMB).toBeLessThan(500); // Reasonable upper bound
     });
 
+    // Priority: P2
     test('3.1-AC10-004: should not leak with large value entries', async () => {
+      // Given: Cache with large string values (10KB each)
+      // When: Filling cache and triggering evictions
+      // Then: Memory growth should be bounded (< 100MB)
+
       const sessionId = 'large-values-test';
       const initialMemory = process.memoryUsage().heapUsed;
 
