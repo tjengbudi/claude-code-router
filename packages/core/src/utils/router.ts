@@ -213,11 +213,18 @@ const getUseModel = async (
   // Story 2.5: Auto-registration for zero-config team onboarding
   // Story 3.1: Session-based caching and project detection for multi-project support
 
+  // Story 3.6: Measure total routing latency
+  const routingStart = performance.now();
+
   // Early exit optimization: Check for tag presence first (fast string search)
   // This ensures non-BMM users have < 1ms overhead (NFR-P3)
   const hasAgentTag = req.body.system?.[0]?.text?.includes('CCR-AGENT-ID');
   if (hasAgentTag) {
+    // Story 3.6: Measure agent detection latency
+    const agentDetectionStart = performance.now();
     const agentId = extractAgentId(req, req.log);
+    performanceMonitoring.record('agentDetection', performance.now() - agentDetectionStart);
+
     if (agentId) {
       try {
         // Story 3.1: Extract session ID for cache key
@@ -232,11 +239,17 @@ const getUseModel = async (
 
           // Story 3.1: Check cache first (90%+ hit rate target per NFR-P2)
           try {
+            // Story 3.6: Measure cache lookup latency
+            const cacheLookupStart = performance.now();
             const cachedModel = sessionAgentModelCache.get(cacheKey);
+            performanceMonitoring.record('cache', performance.now() - cacheLookupStart);
+
             if (cachedModel) {
               // Story 3.2: Track cache hit metric
               cacheMetrics.hits++;
               req.log.debug({ cacheKey, model: cachedModel }, 'Agent model cache hit');
+              // Story 3.6: Record total routing latency before return
+              performanceMonitoring.record('totalRouting', performance.now() - routingStart);
               return { model: cachedModel, scenarioType: 'default' };
             }
           } catch (cacheError) {
@@ -255,6 +268,8 @@ const getUseModel = async (
             } catch (cacheError) {
               req.log.warn({ error: (cacheError as Error).message, cacheKey }, 'Cache set operation failed, continuing without caching');
             }
+            // Story 3.6: Record total routing latency before return
+            performanceMonitoring.record('totalRouting', performance.now() - routingStart);
             return { model: agentModel, scenarioType: 'default' };
           }
 
@@ -289,6 +304,8 @@ const getUseModel = async (
                if (agentModelAfterRegistration) {
                  sessionAgentModelCache.set(newCacheKey, agentModelAfterRegistration);
                  req.log.info({ agentId, model: agentModelAfterRegistration }, 'Agent using configured model after auto-registration');
+                 // Story 3.6: Record total routing latency before return
+                 performanceMonitoring.record('totalRouting', performance.now() - routingStart);
                  return { model: agentModelAfterRegistration, scenarioType: 'default' };
                }
              }
@@ -483,6 +500,182 @@ export const logCacheMetrics = (context?: string): void => {
     evictions: metrics.evictions,
   });
 };
+
+// ============ START: Performance Monitoring (Story 3.6) ============
+// Optional performance monitoring for production use (disabled by default)
+// Enable by setting environment variable: CCR_PERFORMANCE_MONITORING=true
+//
+
+/**
+ * Performance monitoring statistics for a single metric type
+ */
+export interface PerformanceStat {
+  avg: number;
+  p50: number;
+  p95: number;
+  p99: number;
+  count: number;
+}
+
+/**
+ * Performance monitoring data structure
+ */
+export interface PerformanceMetricsData {
+  agentDetectionLatency: number[];
+  cacheLatency: number[];
+  totalRoutingLatency: number[];
+}
+
+/**
+ * Performance monitoring configuration and state
+ */
+const performanceMonitoring = {
+  enabled: process.env.CCR_PERFORMANCE_MONITORING === 'true',
+  maxSamples: 1000, // Keep only last 1000 measurements per metric
+  metrics: {
+    agentDetectionLatency: [] as number[],
+    cacheLatency: [] as number[],
+    totalRoutingLatency: [] as number[],
+  } as PerformanceMetricsData,
+
+  /**
+   * Record a performance metric (only if monitoring is enabled)
+   * @param metric - The metric type to record
+   * @param latency - The latency value in milliseconds
+   */
+  record(metric: 'agentDetection' | 'cache' | 'totalRouting', latency: number): void {
+    if (!this.enabled) return;
+
+    const key = `${metric}Latency` as keyof PerformanceMetricsData;
+    this.metrics[key].push(latency);
+
+    // Keep only last maxSamples measurements to prevent unbounded memory growth
+    if (this.metrics[key].length > this.maxSamples) {
+      this.metrics[key].shift();
+    }
+  },
+
+  /**
+   * Get statistics for a specific metric
+   * @param metric - The metric type to get statistics for
+   * @returns Performance statistics or null if no data available
+   */
+  getStats(metric: 'agentDetection' | 'cache' | 'totalRouting'): PerformanceStat | null {
+    if (!this.enabled) return null;
+
+    const key = `${metric}Latency` as keyof PerformanceMetricsData;
+    const data = this.metrics[key];
+
+    if (data.length === 0) return null;
+
+    const sorted = [...data].sort((a, b) => a - b);
+    const sum = data.reduce((a, b) => a + b, 0);
+    const avg = sum / data.length;
+
+    return {
+      avg,
+      p50: sorted[Math.floor(sorted.length * 0.5)],
+      p95: sorted[Math.floor(sorted.length * 0.95)],
+      p99: sorted[Math.floor(sorted.length * 0.99)],
+      count: data.length,
+    };
+  },
+
+  /**
+   * Export all current performance metrics
+   * @returns Object containing all metrics statistics
+   */
+  export(): {
+    agentDetection: PerformanceStat | null;
+    cache: PerformanceStat | null;
+    totalRouting: PerformanceStat | null;
+    enabled: boolean;
+  } {
+    return {
+      agentDetection: this.getStats('agentDetection'),
+      cache: this.getStats('cache'),
+      totalRouting: this.getStats('totalRouting'),
+      enabled: this.enabled,
+    };
+  },
+
+  /**
+   * Reset all performance metrics (useful for testing or starting a new measurement period)
+   */
+  reset(): void {
+    this.metrics.agentDetectionLatency = [];
+    this.metrics.cacheLatency = [];
+    this.metrics.totalRoutingLatency = [];
+  },
+
+  /**
+   * Log performance metrics summary to console
+   * @param context - Optional context string to prefix the log output
+   */
+  log(context?: string): void {
+    if (!this.enabled) return;
+
+    const data = this.export();
+    const prefix = context ? `[${context}]` : '';
+
+    console.log(`${prefix} Performance Monitoring Metrics:`);
+
+    if (data.agentDetection) {
+      console.log(`  Agent Detection: avg=${data.agentDetection.avg.toFixed(4)}ms, p95=${data.agentDetection.p95.toFixed(4)}ms, p99=${data.agentDetection.p99.toFixed(4)}ms (${data.agentDetection.count} samples)`);
+    }
+
+    if (data.cache) {
+      console.log(`  Cache Lookup: avg=${data.cache.avg.toFixed(4)}ms, p95=${data.cache.p95.toFixed(4)}ms, p99=${data.cache.p99.toFixed(4)}ms (${data.cache.count} samples)`);
+    }
+
+    if (data.totalRouting) {
+      console.log(`  Total Routing: avg=${data.totalRouting.avg.toFixed(4)}ms, p95=${data.totalRouting.p95.toFixed(4)}ms, p99=${data.totalRouting.p99.toFixed(4)}ms (${data.totalRouting.count} samples)`);
+    }
+  },
+};
+
+/**
+ * Export performance monitoring utilities for external use
+ * Usage in production:
+ * 1. Set environment variable: export CCR_PERFORMANCE_MONITORING=true
+ * 2. Import and use in your code:
+ *    import { getPerformanceStats, exportPerformanceMetrics, resetPerformanceMetrics, logPerformanceMetrics } from './router';
+ *
+ * Example:
+ * ```typescript
+ * // Get current statistics
+ * const stats = getPerformanceStats('cache');
+ * console.log('Cache p95 latency:', stats?.p95);
+ *
+ * // Export all metrics
+ * const allMetrics = exportPerformanceMetrics();
+ *
+ * // Reset metrics (e.g., before a benchmark)
+ * resetPerformanceMetrics();
+ *
+ * // Log summary to console
+ * logPerformanceMetrics('my-context');
+ * ```
+ */
+export const getPerformanceStats = (metric: 'agentDetection' | 'cache' | 'totalRouting'): PerformanceStat | null => {
+  return performanceMonitoring.getStats(metric);
+};
+
+export const exportPerformanceMetrics = () => {
+  return performanceMonitoring.export();
+};
+
+export const resetPerformanceMetrics = (): void => {
+  performanceMonitoring.reset();
+};
+
+export const logPerformanceMetrics = (context?: string): void => {
+  performanceMonitoring.log(context);
+};
+
+// Internal: Export performance monitoring instance for use in router code
+export { performanceMonitoring };
+// ============ END: Performance Monitoring ============
 
 export const searchProjectBySession = async (
   sessionId: string
