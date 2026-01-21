@@ -103,13 +103,23 @@ describe('Story 2.3: Router Default Fallback - Integration Tests', () => {
   });
 
   describe('Agent Model Configuration and Retrieval', () => {
-    test('should return undefined for agent without configured model', async () => {
+    // Priority: P0
+    test('2.3-AC1-001: should return undefined for agent without configured model', async () => {
+      // Given: An agent with no model configured
+      // When: Retrieving model for the agent
+      // Then: Should return undefined to trigger Router.default fallback
+
       const model = await projectManager.getModelByAgentId(testAgentId);
       expect(model).toBeUndefined();
       // Undefined triggers Router.default fallback in routing logic
     });
 
-    test('should return configured model for agent with specific model', async () => {
+    // Priority: P0
+    test('2.3-AC2-001: should return configured model for agent with specific model', async () => {
+      // Given: An agent with a specific model configured
+      // When: Retrieving model for the agent
+      // Then: Should return the configured model, not Router.default
+
       const testModel = 'openai,gpt-4o';
       await projectManager.setAgentModel(testProjectId, testAgentId, testModel);
 
@@ -118,7 +128,12 @@ describe('Story 2.3: Router Default Fallback - Integration Tests', () => {
       // Agent should route to the configured model, not Router.default
     });
 
-    test('should return undefined after removing agent model (setting to undefined)', async () => {
+    // Priority: P0
+    test('2.3-AC3-001: should return undefined after removing agent model (setting to undefined)', async () => {
+      // Given: An agent with a configured model
+      // When: Removing the model by setting to undefined
+      // Then: Should return undefined and fall back to Router.default
+
       // First set a model
       await projectManager.setAgentModel(testProjectId, testAgentId, 'openai,gpt-4o');
 
@@ -135,14 +150,24 @@ describe('Story 2.3: Router Default Fallback - Integration Tests', () => {
       // Agent should now use Router.default
     });
 
-    test('should return undefined for non-existent agent ID', async () => {
+    // Priority: P1
+    test('2.3-AC4-001: should return undefined for non-existent agent ID', async () => {
+      // Given: A non-existent agent ID
+      // When: Retrieving model for the agent
+      // Then: Should return undefined and gracefully degrade to Router.default
+
       const fakeAgentId = uuidv4();
       const model = await projectManager.getModelByAgentId(fakeAgentId);
       expect(model).toBeUndefined();
       // Non-existent agents should gracefully degrade to Router.default
     });
 
-    test('should return undefined for invalid agent ID format', async () => {
+    // Priority: P1
+    test('2.3-AC4-002: should return undefined for invalid agent ID format', async () => {
+      // Given: An invalid agent ID format
+      // When: Retrieving model for the agent
+      // Then: Should return undefined and gracefully degrade to Router.default
+
       const invalidAgentId = 'not-a-uuid';
       const model = await projectManager.getModelByAgentId(invalidAgentId);
       expect(model).toBeUndefined();
@@ -151,7 +176,12 @@ describe('Story 2.3: Router Default Fallback - Integration Tests', () => {
   });
 
   describe('Router.default Fallback Behavior', () => {
-    test('should allow multiple agents to use Router.default', async () => {
+    // Priority: P0
+    test('2.3-AC1-002: should allow multiple agents to use Router.default', async () => {
+      // Given: Multiple agents with no model configured
+      // When: Retrieving models for all agents
+      // Then: All should return undefined and use same Router.default
+
       // Both agents start with no model configured
       const model1 = await projectManager.getModelByAgentId(testAgentId);
       const model2 = await projectManager.getModelByAgentId(testAgentId2);
@@ -161,7 +191,12 @@ describe('Story 2.3: Router Default Fallback - Integration Tests', () => {
       // Both agents should use the same Router.default model (consistent behavior)
     });
 
-    test('should handle mixed configuration (some agents configured, some not)', async () => {
+    // Priority: P0
+    test('2.3-AC2-002: should handle mixed configuration (some agents configured, some not)', async () => {
+      // Given: One agent with specific model, another without
+      // When: Retrieving models for both agents
+      // Then: Configured agent uses specific model, unconfigured uses Router.default
+
       // Configure first agent with specific model
       await projectManager.setAgentModel(testProjectId, testAgentId, 'openai,gpt-4o');
 
@@ -174,7 +209,12 @@ describe('Story 2.3: Router Default Fallback - Integration Tests', () => {
       // Agent 1 uses specific model, Agent 2 uses Router.default
     });
 
-    test('should handle model format validation during configuration', async () => {
+    // Priority: P1
+    test('2.3-AC5-001: should handle model format validation during configuration', async () => {
+      // Given: Valid and invalid model format strings
+      // When: Setting agent models
+      // Then: Valid formats succeed, invalid formats fail with previous model intact
+
       // Valid model format
       await expect(
         projectManager.setAgentModel(testProjectId, testAgentId, 'openai,gpt-4o')
@@ -190,7 +230,12 @@ describe('Story 2.3: Router Default Fallback - Integration Tests', () => {
       expect(model).toBe('openai,gpt-4o');
     });
 
-    test('should reject API keys in model strings (security)', async () => {
+    // Priority: P0
+    test('2.3-AC5-002: should reject API keys in model strings (security)', async () => {
+      // Given: Model strings that look like API keys
+      // When: Attempting to set these as agent models
+      // Then: Should reject all API key patterns for security
+
       // These look like API keys and should be rejected
       const apiKeyModels = [
         'sk-1234567890,model',
@@ -207,7 +252,12 @@ describe('Story 2.3: Router Default Fallback - Integration Tests', () => {
   });
 
   describe('ConfigService Router.default Fallback', () => {
-    test('should return configured Router.default from config', () => {
+    // Priority: P0
+    test('2.3-AC6-001: should return configured Router.default from config', () => {
+      // Given: A config with Router.default configured
+      // When: Retrieving Router.default value
+      // Then: Should return the configured fallback model
+
       const configService = new MockConfigService();
       const routerDefault = configService.get('Router')?.default;
 
@@ -215,7 +265,12 @@ describe('Story 2.3: Router Default Fallback - Integration Tests', () => {
       // This is the fallback model used when agent has no specific model
     });
 
-    test('should handle missing Router.default with hardcoded fallback', () => {
+    // Priority: P1
+    test('2.3-AC6-002: should handle missing Router.default with hardcoded fallback', () => {
+      // Given: A config with empty Router section
+      // When: Retrieving Router.default value
+      // Then: Should return undefined and use hardcoded fallback
+
       const configService = new MockConfigService({ Router: {} });
       const routerDefault = configService.get('Router')?.default;
 
@@ -223,7 +278,12 @@ describe('Story 2.3: Router Default Fallback - Integration Tests', () => {
       // Router code should use hardcoded fallback: 'anthropic,claude-sonnet-4'
     });
 
-    test('should handle missing Router section entirely', () => {
+    // Priority: P1
+    test('2.3-AC6-003: should handle missing Router section entirely', () => {
+      // Given: A config with no Router section
+      // When: Retrieving Router section
+      // Then: Should return undefined and use hardcoded fallback
+
       // Create a config service with completely empty config
       const emptyConfigService = new MockConfigService({});
       // Delete the Router property that gets set by constructor
@@ -236,7 +296,12 @@ describe('Story 2.3: Router Default Fallback - Integration Tests', () => {
   });
 
   describe('End-to-End Scenarios', () => {
-    test('scenario: create agent → do not configure model → verify Router.default used', async () => {
+    // Priority: P0
+    test('2.3-E2E-001: scenario: create agent → do not configure model → verify Router.default used', async () => {
+      // Given: A newly created agent with no model configuration
+      // When: Retrieving model for the agent
+      // Then: Should use Router.default
+
       // Agent is created via scanProject in beforeEach
       // No model is configured
       const model = await projectManager.getModelByAgentId(testAgentId);
@@ -245,7 +310,12 @@ describe('Story 2.3: Router Default Fallback - Integration Tests', () => {
       // Routing logic should use Router.default
     });
 
-    test('scenario: configure agent with specific model → verify model used', async () => {
+    // Priority: P0
+    test('2.3-E2E-002: scenario: configure agent with specific model → verify model used', async () => {
+      // Given: An agent configured with a specific model
+      // When: Retrieving model for the agent
+      // Then: Should use the configured model, not Router.default
+
       const specificModel = 'openai,gpt-4o';
       await projectManager.setAgentModel(testProjectId, testAgentId, specificModel);
 
@@ -255,7 +325,12 @@ describe('Story 2.3: Router Default Fallback - Integration Tests', () => {
       // Routing logic should use the configured model, not Router.default
     });
 
-    test('scenario: configure agent to use Router.default explicitly → verify model removed', async () => {
+    // Priority: P0
+    test('2.3-E2E-003: scenario: configure agent to use Router.default explicitly → verify model removed', async () => {
+      // Given: An agent with a specific model configured
+      // When: Explicitly setting model to undefined
+      // Then: Should remove model and use Router.default
+
       // First set a specific model
       await projectManager.setAgentModel(testProjectId, testAgentId, 'openai,gpt-4o');
 
@@ -268,7 +343,12 @@ describe('Story 2.3: Router Default Fallback - Integration Tests', () => {
       // Agent should now use Router.default
     });
 
-    test('scenario: multiple agents without configuration → all use same Router.default', async () => {
+    // Priority: P0
+    test('2.3-E2E-004: scenario: multiple agents without configuration → all use same Router.default', async () => {
+      // Given: Multiple agents with no model configuration
+      // When: Retrieving models for all agents
+      // Then: All should use the same Router.default model
+
       const model1 = await projectManager.getModelByAgentId(testAgentId);
       const model2 = await projectManager.getModelByAgentId(testAgentId2);
 
@@ -279,7 +359,12 @@ describe('Story 2.3: Router Default Fallback - Integration Tests', () => {
   });
 
   describe('Performance Requirements', () => {
-    test('should complete agent model lookup in reasonable time', async () => {
+    // Priority: P1
+    test('2.3-NFR-P1-001: should complete agent model lookup in reasonable time', async () => {
+      // Given: 100 sequential model lookups
+      // When: Measuring average lookup time
+      // Then: Average should be well under 50ms (NFR-P1 target)
+
       const startTime = Date.now();
 
       // Perform 100 model lookups
@@ -294,7 +379,12 @@ describe('Story 2.3: Router Default Fallback - Integration Tests', () => {
       expect(avgTime).toBeLessThan(50);
     });
 
-    test('should handle concurrent model lookups', async () => {
+    // Priority: P2
+    test('2.3-NFR-P1-002: should handle concurrent model lookups', async () => {
+      // Given: 50 concurrent model lookup requests
+      // When: Executing all lookups in parallel
+      // Then: All should complete successfully with correct results
+
       // Perform 50 concurrent lookups
       const promises = Array.from({ length: 50 }, () =>
         projectManager.getModelByAgentId(testAgentId)
@@ -308,7 +398,12 @@ describe('Story 2.3: Router Default Fallback - Integration Tests', () => {
   });
 
   describe('Error Handling and Graceful Degradation', () => {
-    test('should handle corrupted projects.json gracefully', async () => {
+    // Priority: P1
+    test('2.3-NFR-R3-001: should handle corrupted projects.json gracefully', async () => {
+      // Given: A corrupted projects.json file
+      // When: Creating ProjectManager and retrieving model
+      // Then: Should gracefully degrade to Router.default without throwing
+
       // Write corrupted data to projects.json
       await fs.writeFile(TEST_PROJECTS_FILE, '{invalid json}', 'utf-8');
 
@@ -321,7 +416,12 @@ describe('Story 2.3: Router Default Fallback - Integration Tests', () => {
       // Graceful degradation: fallback to Router.default
     });
 
-    test('should handle missing projects.json file', async () => {
+    // Priority: P1
+    test('2.3-NFR-R3-002: should handle missing projects.json file', async () => {
+      // Given: A non-existent projects.json file
+      // When: Creating ProjectManager and loading projects
+      // Then: Should create default structure without throwing
+
       // Use non-existent file path
       const missingFile = path.join(TEST_DIR, 'nonexistent-projects.json');
       const missingPM = new ProjectManager(missingFile);
@@ -332,7 +432,12 @@ describe('Story 2.3: Router Default Fallback - Integration Tests', () => {
       // Graceful degradation: treat as empty project list
     });
 
-    test('should validate agent ID format before lookup', async () => {
+    // Priority: P1
+    test('2.3-NFR-R3-003: should validate agent ID format before lookup', async () => {
+      // Given: Various invalid agent ID formats
+      // When: Attempting to retrieve models for invalid IDs
+      // Then: Should gracefully degrade to Router.default for all
+
       const invalidIds = [
         '',                    // empty
         'not-a-uuid',         // not UUID format
