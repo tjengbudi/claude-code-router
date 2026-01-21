@@ -1,0 +1,15 @@
+# Ensure consistent line endings for cross-platform compatibility
+# Agent markdown files should always use LF line endings
+*.md text eol=lf
+
+# Ensure consistent line endings for configuration files
+*.json text eol=lf
+*.json5 text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+
+# Ensure consistent line endings for source code
+*.ts text eol=lf
+*.js text eol=lf
+*.tsx text eol=lf
+*.jsx text eol=lf

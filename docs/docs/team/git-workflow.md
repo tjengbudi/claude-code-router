@@ -1,32 +1,209 @@
-# Git-Based Configuration Sharing
+# Git-Based Agent Sharing
 
-This guide explains how teams share agent model configurations using git, enabling zero-setup onboarding for new team members.
+This guide explains how teams share agent definitions using git, enabling zero-setup onboarding for new team members.
+
+## Architectural Evolution (Story 4.5)
+
+**IMPORTANT: This workflow represents a significant architectural change from earlier versions.**
+
+### Previous Architecture (Pre-Story 4.5)
+- `projects.json` was committed to git for configuration sharing
+- All team members used the same model configuration
+- Merge conflicts occurred when members configured different models
+
+### Current Architecture (Story 4.5+)
+- Agent `.md` files with `CCR-AGENT-ID` tags are committed to git
+- `projects.json` stays in `~/.claude-code-router/` (local-only, NOT committed)
+- Each team member configures their own model assignments independently
+
+### Why the Change?
+1. **Independent model preferences**: Each developer can use their preferred models
+2. **Zero merge conflicts**: Each team member has their own `projects.json`
+3. **Git-native workflow**: Standard pull/commit/push for agent sharing
+4. **Better security**: No accidental commit of model preferences with potential cost implications
 
 ## Overview
 
-The CCR agent system stores team-shared configurations in `projects.json`, located in `~/.claude-code-router/projects.json`. This file is safe to commit to git because it contains only metadata and provider/model names - **NO API keys**.
+The CCR agent system uses a **git-based workflow** for sharing agent definitions:
 
-## What's Safe to Commit
+- **Agent .md files** with `CCR-AGENT-ID` tags are committed to git (shared across team)
+- **projects.json** stays in `~/.claude-code-router/` (local-only, NOT committed)
+- Each team member configures their own model assignments independently
 
-✅ **Safe to commit to git:**
-- Provider names (e.g., `"openai"`, `"anthropic"`, `"google"`)
-- Model names (e.g., `"gpt-4o"`, `"claude-3-5-sonnet-20241022"`)
-- Project metadata (paths, names, UUIDs)
-- Agent metadata (IDs, file paths)
-- Schema version for compatibility
+## What's Shared vs. What's Local
 
-❌ **Never committed to git:**
-- API keys (stored in `~/.claude-code-router/config.json` or environment variables)
-- Secrets, tokens, credentials
+✅ **Shared via git (committed to repository):**
+- Agent `.md` files in `.bmad/bmm/agents/`
+- CCR-AGENT-ID tags injected into agent files
+- Agent structure and definitions
+
+❌ **NOT shared (local to each team member):**
+- `projects.json` (stays in `~/.claude-code-router/`)
+- Model assignments (each team member chooses their own)
+- API keys and secrets
+
+## Architecture Diagram
+
+```
+Git-Tracked Repository:
+├── .bmad/bmm/agents/
+│   ├── dev.md              # Contains: <!-- CCR-AGENT-ID: uuid -->
+│   ├── sm.md               # Contains: <!-- CCR-AGENT-ID: uuid -->
+│   └── new-agent.md        # New agents shared via git
+
+Local Only (~/.claude-code-router/):
+└── projects.json           # Each team member has their own copy
+```
+
+## Team Workflow
+
+### Developer A: Add New Agent
+
+1. **Create new agent file:**
+   ```bash
+   cd .bmad/bmm/agents/
+   # Create new-agent.md
+   ```
+
+2. **Run project scan to inject CCR-AGENT-ID:**
+   ```bash
+   ccr project scan <project-id>
+   # System detects new agent and injects UUID
+   # Prompts for model configuration (optional)
+   ```
+
+3. **Commit and push:**
+   ```bash
+   git add .bmad/bmm/agents/new-agent.md
+   git commit -m "feat(agents): add new-agent"
+   git push origin main
+   ```
+
+### Developer B: Receive Agent from Git
+
+1. **Pull changes:**
+   ```bash
+   git pull origin main
+   # Receives new-agent.md with CCR-AGENT-ID already injected
+   ```
+
+2. **Run project scan:**
+   ```bash
+   ccr project scan <project-id>
+   # System detects new agent with existing CCR-AGENT-ID
+   # Prompts for model configuration
+   ```
+
+3. **Configure model interactively:**
+   ```
+   Enter model for new-agent (provider,model): openai,gpt-4o
+   ```
+
+4. **Start working:**
+   ```bash
+   ccr code "Help me with this task"
+   # Uses your configured model for new-agent
+   ```
+
+## Key Differences from Old Workflow
+
+| Aspect | Old Workflow (pre-4.5) | New Workflow (post-4.5) |
+|--------|------------------------|-------------------------|
+| Shared via git | `projects.json` | Agent `.md` files with `CCR-AGENT-ID` |
+| projects.json location | In repository | `~/.claude-code-router/` (local) |
+| Model configuration | Shared across team | Each member configures independently |
+| Merge conflicts | In `projects.json` | In agent `.md` files (rare) |
+
+## Benefits of New Architecture
+
+1. **Agent definitions are versioned** - Track changes to agent structure
+2. **Independent model choices** - Each developer uses their preferred models
+3. **Zero merge conflicts in config** - Each team member has their own `projects.json`
+4. **Git-native workflow** - Standard pull/commit/push for agent sharing
+
+## New Team Member Onboarding
+
+1. **Clone the repository:**
+   ```bash
+   git clone <repo-url>
+   cd <repo>
+   ```
+
+2. **Install CCR globally:**
+   ```bash
+   npm install -g @musistudio/claude-code-router
+   ```
+
+3. **Scan project to detect agents:**
+   ```bash
+   ccr project scan <project-id>
+   # Detects all agents with CCR-AGENT-ID tags
+   # Prompts for model configuration
+   ```
+
+4. **Configure your models interactively:**
+   ```
+   Found 3 agents:
+   - dev.md: Enter model (provider,model): openai,gpt-4o
+   - sm.md: Enter model (provider,model): anthropic,claude-haiku
+   - pm.md: Enter model (provider,model): [skip for Router.default]
+   ```
+
+5. **Start working:**
+   ```bash
+   ccr code "Help me implement this feature"
+   ```
+
+## Merge Conflict Handling
+
+When two developers add different agents, git handles this naturally:
+
+### Scenario 1: Different Agents (No Conflict)
+
+```
+Developer A adds: agent-a.md
+Developer B adds: agent-b.md
+Result: Git merges both automatically
+```
+
+### Scenario 2: Same Agent File (Conflict Possible)
+
+```
+Developer A modifies: dev.md
+Developer B modifies: dev.md
+Result: Git shows conflict in dev.md
+Resolution: Manually merge, keeping CCR-AGENT-ID from one or both
+```
+
+**Note:** CCR-AGENT-ID uniqueness ensures proper agent identification after merge.
+
+## Security Guarantee
+
+Agent `.md` files are **safe to commit to public repositories** because:
+
+1. **CCR-AGENT-ID** is just a UUID (no secrets)
+2. **No API keys** are ever written to agent files
+3. **Model configurations** stay in local `projects.json`
+4. **API keys** remain in environment variables or `config.json`
 
 ## File Format
 
-The `projects.json` file uses JSON5 format for human readability:
+### Agent File Example (committed to git)
+
+```markdown
+# Dev Agent
+
+This agent handles development tasks.
+
+<!-- CCR-AGENT-ID: 550e8400-e29b-41d4-a716-446655440000 -->
+```
+
+### projects.json (local, NOT committed)
 
 ```json5
 // Project configurations for CCR agent system
 // Schema version: 1.0.0
-// This file is safe to commit to git (contains no API keys)
+// This file is local-only (NOT committed to git)
 {
   schemaVersion: "1.0.0",
   projects: {
@@ -37,26 +214,12 @@ The `projects.json` file uses JSON5 format for human readability:
       createdAt: "2026-01-19T10:00:00.000Z",
       updatedAt: "2026-01-19T10:00:00.000Z",
       agents: {
-        "agent-uuid-1": {
-          id: "agent-uuid-1",
+        "550e8400-e29b-41d4-a716-446655440001": {
+          id: "550e8400-e29b-41d4-a716-446655440001",
           name: "dev.md",
           relativePath: ".bmad/bmm/agents/dev.md",
           absolutePath: "/home/user/my-bmm-project/.bmad/bmm/agents/dev.md",
-          model: "openai,gpt-4o"
-        },
-        "agent-uuid-2": {
-          id: "agent-uuid-2",
-          name: "SM.md",
-          relativePath: ".bmad/bmm/agents/SM.md",
-          absolutePath: "/home/user/my-bmm-project/.bmad/bmm/agents/SM.md",
-          model: "anthropic,claude-haiku"
-        },
-        "agent-uuid-3": {
-          id: "agent-uuid-3",
-          name: "pm.md",
-          relativePath: ".bmad/bmm/agents/pm.md",
-          absolutePath: "/home/user/my-bmm-project/.bmad/bmm/agents/pm.md"
-          // No model property → uses Router.default
+          model: "openai,gpt-4o"  // Your model choice
         }
       }
     }
@@ -64,194 +227,48 @@ The `projects.json` file uses JSON5 format for human readability:
 }
 ```
 
-## Team Workflow
+## .gitattributes Configuration
 
-### Developer A: Configure and Share
+The repository includes `.gitattributes` to ensure consistent line endings:
 
-1. **Configure agents for your project:**
-   ```bash
-   ccr project configure <project-id>
-   # Select models for each agent interactively
-   # Saves to ~/.claude-code-router/projects.json
-   ```
-
-2. **Commit and push to share:**
-   ```bash
-   cp ~/.claude-code-router/projects.json /path/to/project/.claude-code-router/
-   git add .claude-code-router/projects.json
-   git commit -m "Configure agent model assignments"
-   git push origin main
-   ```
-
-### Developer B: Pull and Use
-
-1. **Pull changes from git:**
-   ```bash
-   git pull origin main
-   ```
-
-2. **Copy projects.json to CCR directory:**
-   ```bash
-   mkdir -p ~/.claude-code-router
-   cp .claude-code-router/projects.json ~/.claude-code-router/
-   ```
-
-3. **Start working - agent routing works immediately!**
-   ```bash
-   ccr code "Help me refactor this function"
-   # Uses configured models automatically
-   ```
-
-### New Team Member Onboarding
-
-1. **Clone the repository:**
-   ```bash
-   git clone <repo-url>
-   cd <repo>
-   ```
-
-2. **Install CCR globally (one-time setup):**
-   ```bash
-   npm install -g @musistudio/claude-code-router
-   ```
-
-3. **Copy projects.json:**
-   ```bash
-   mkdir -p ~/.claude-code-router
-   cp .claude-code-router/projects.json ~/.claude-code-router/
-   ```
-
-4. **Configure your API keys:**
-   ```bash
-   ccr model
-   # Or edit ~/.claude-code-router/config.json
-   ```
-
-5. **Start working - agent routing is pre-configured!**
-
-## Merge Conflict Resolution
-
-When two developers configure the same agent differently, git will detect a merge conflict in `projects.json`. The JSON5 format makes conflicts easy to resolve manually.
-
-### Example Conflict
-
-```json5
-<<<<<<< HEAD
-  model: "openai,gpt-4o"  // Developer A's choice
-=======
-  model: "anthropic,claude-sonnet-4"  // Developer B's choice
->>>>>>> feature-branch
+```gitattributes
+# Agent markdown files use LF line endings
+*.md text eol=lf
 ```
 
-### Resolution Steps
-
-1. **Discuss with your team** to decide which model to use
-2. **Edit the file** to keep the chosen configuration:
-   ```json5
-   model: "openai,gpt-4o"  // Team decided to use GPT-4o
-   ```
-3. **Mark as resolved** and commit:
-   ```bash
-   git add projects.json
-   git commit -m "Resolve merge conflict: use GPT-4o for dev agent"
-   ```
-
-## Preventing Merge Conflicts
-
-Follow these best practices to minimize conflicts:
-
-- **Coordinate in team chat** before configuring agents
-- **One PR per agent** configuration rather than bulk changes
-- **Pull before pushing** to catch conflicts early
-- **Communicate changes** in pull request descriptions
-
-## Schema Version
-
-The `schemaVersion` field indicates the format version of `projects.json`. This enables:
-
-- **Backward compatibility**: Loading older files with newer CCR versions
-- **Forward compatibility**: Loading newer files with older CCR versions (with warnings)
-- **Graceful migration**: Future schema changes will be handled automatically
-
-If you see a schema version warning, the system will attempt compatibility mode. This is normal when upgrading CCR or working with teammates on different versions.
-
-## Security Guarantee
-
-The `projects.json` file is **safe to commit to public repositories** because:
-
-1. **Validation** rejects API key patterns during save
-2. **Only metadata** is stored (provider names, model names)
-3. **No secrets** are ever written to the file
-4. **Audit tests** verify compliance
-
-API keys are stored locally in:
-- `~/.claude-code-router/config.json` (global config)
-- Environment variables (CI/CD)
-- `.env` files (should be gitignored)
+This ensures CCR-AGENT-ID tags work correctly across Windows, Mac, and Linux.
 
 ## Troubleshooting
 
-### projects.json not found
+### Agent not detected after git pull
 
 ```bash
-# Ensure CCR directory exists
-mkdir -p ~/.claude-code-router
+# Ensure you ran project scan
+ccr project scan <project-id>
 
-# Copy from your project if you have it
-cp .claude-code-router/projects.json ~/.claude-code-router/
+# Verify agent file has CCR-AGENT-ID
+cat .bmad/bmm/agents/new-agent.md
+# Should contain: <!-- CCR-AGENT-ID: uuid -->
 ```
 
-### Schema version warning
-
-This is informational - CCR will attempt compatibility mode. To resolve:
+### Model configuration prompt not appearing
 
 ```bash
-# Re-save your projects.json to update schema version
-ccr project list  # Triggers re-save with current schema
+# Re-run project scan with force flag
+ccr project scan <project-id>
+
+# Or manually configure specific agent
+ccr project configure <project-id>
 ```
 
-### Merge conflict keeps happening
+### Same agent shows different models for different team members
 
-1. Coordinate with your team in chat
-2. Decide on a configuration approach
-3. Configure once and commit
-4. Have other team members pull that configuration
-
-### Changes not reflected
-
-```bash
-# Reload CCR after copying projects.json
-ccr restart
-```
-
-## .gitignore Configuration
-
-**Do NOT** ignore `projects.json` - it should be committed to share configurations.
-
-**DO** ignore these files (they contain secrets):
-```
-.claude-code-router/config.json
-.env
-*.key
-```
-
-Example `.gitignore`:
-```gitignore
-# CCR: Contains API keys
-.claude-code-router/config.json
-
-# CCR: Local overrides
-.env.local
-
-# General: Environment files
-.env
-*.key
-```
+This is **expected behavior** - each team member maintains their own `projects.json` with their model preferences. The agent ID (CCR-AGENT-ID) is the same, but model assignments are independent.
 
 ## Best Practices
 
-1. **Commit projects.json early** in your workflow
-2. **Document agent choices** in commit messages
-3. **Review changes** in pull requests
-4. **Coordinate as a team** for major configuration changes
-5. **Keep API keys separate** in local config or environment variables
+1. **Commit agent files early** - Share agent definitions with team
+2. **Document agent purpose** - Include clear descriptions in agent files
+3. **Coordinate large changes** - Use team chat for major agent restructuring
+4. **Never commit API keys** - Keep secrets in environment variables or local config
+5. **Review agent files in PRs** - Ensure CCR-AGENT-ID tags are preserved

@@ -10,3 +10,8 @@ tsconfig.tsbuildinfo
 # Documentation build output
 docs/build
 docs/.docusaurus
+
+# CCR Agent System - projects.json is stored in ~/.claude-code-router/ (local only)
+# This rule provides defense-in-depth in case projects.json is accidentally created in project dir
+projects.json
+projects.json.backup

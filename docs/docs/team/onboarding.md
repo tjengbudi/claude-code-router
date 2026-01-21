@@ -35,14 +35,25 @@ ccr --version
 ccr status
 ```
 
-### Step 3: Copy Team Configurations (1 minute)
+### Step 3: Scan Project to Detect Agents (2 minutes)
 
 ```bash
-# Create CCR directory if it doesn't exist
-mkdir -p ~/.claude-code-router
+# Scan the project to detect agents
+ccr project scan <project-id>
+```
 
-# Copy team's projects.json
-cp .claude-code-router/projects.json ~/.claude-code-router/
+The system will:
+1. Detect all agents in `.bmad/bmm/agents/`
+2. Read existing `CCR-AGENT-ID` tags from agent files
+3. Prompt you to configure models for each agent
+
+Example prompt:
+```
+Found 3 agents:
+
+Configure model for dev.md (provider,model): openai,gpt-4o
+Configure model for sm.md (provider,model): anthropic,claude-haiku
+Configure model for pm.md (provider,model): [enter to skip, uses Router.default]
 ```
 
 ### Step 4: Configure Your API Keys (5 minutes)
@@ -78,7 +89,7 @@ Edit `~/.claude-code-router/config.json`:
 
 ### Step 5: Start Working (4 minutes)
 
-You're ready! CCR agent routing is pre-configured with your team's model assignments.
+You're ready! CCR agent routing is configured with your chosen models.
 
 ```bash
 # In your project directory
@@ -87,6 +98,27 @@ cd /path/to/your/project
 # Use CCR - agent routing works automatically
 ccr code "Help me implement user authentication"
 ```
+
+## What's Different About This Workflow
+
+### Agent Files Come From Git
+
+Unlike other tools that require manual configuration files, CCR discovers agents directly from agent markdown files committed to git:
+
+- **Agent definitions** are shared via version control
+- **Each team member** configures their own model preferences
+- **No manual setup** required - just `git pull` and `ccr project scan`
+
+### Independent Model Configuration
+
+Each team member maintains their own `projects.json` in `~/.claude-code-router/`:
+
+```
+Team member A: dev.md → openai,gpt-4o
+Team member B: dev.md → anthropic,claude-sonnet-4
+```
+
+Both work correctly with the same agent file!
 
 ## Verifying Your Setup
 
@@ -112,46 +144,40 @@ tail -f ~/.claude-code-router/claude-code-router.log
 
 ## Understanding Your Team's Configuration
 
-After copying `projects.json`, your team's agent routing is configured. Here's what you have:
-
 ### Agent Model Assignments
 
-Each agent in your project is assigned to a specific model:
+Each agent in your project is assigned to a model by YOU (not forced by the team):
 
-| Agent File | Model | Purpose |
-|------------|-------|---------|
-| `dev.md` | `openai,gpt-4o` | Development tasks |
-| `SM.md` | `anthropic,claude-haiku` | Scrum Master tasks |
-| `pm.md` | Router default | Project Management |
+| Agent File | Your Model | Purpose |
+|------------|-----------|---------|
+| `dev.md` | Your choice | Development tasks |
+| `sm.md` | Your choice | Scrum Master tasks |
+| `pm.md` | Your choice | Project Management |
 
-*(Example - your team's configuration may vary)*
+*(Your model choices may differ from teammates)*
 
 ### How Routing Works
 
 When you run `ccr code`, the system:
 1. Detects which agent file you're working in
-2. Looks up the configured model for that agent
-3. Routes your request to the assigned model
-4. Returns the response
+2. Looks up the CCR-AGENT-ID from the agent file
+3. Finds your model preference from `~/.claude-code-router/projects.json`
+4. Routes your request to your chosen model
+5. Returns the response
 
 ## Common Onboarding Issues
 
 ### Issue: "Project not found"
 
-**Cause:** The project path in `projects.json` doesn't match your local path.
+**Cause:** The project hasn't been registered yet.
 
-**Solution:** Re-add your project with the correct path:
-
-```bash
-ccr project add /path/to/your/project
-```
+**Solution:** Run `ccr project scan <project-id>` to register and detect agents.
 
 ### Issue: "API key not configured"
 
 **Cause:** Your `config.json` is missing or incomplete.
 
 **Solution:** Configure your API keys:
-
 ```bash
 ccr model
 ```
@@ -164,29 +190,49 @@ ccr model
 - Configure the agent: `ccr project configure <project-id>`
 - Ensure your Router.default is set in `config.json`
 
-### Issue: "Schema version mismatch"
+### Issue: "Agent not detected after git pull"
 
-**Cause:** Your CCR version differs from the version that created `projects.json`.
+**Cause:** You need to run `ccr project scan` to detect new agents from git.
 
-**Solution:** This is informational - CCR will attempt compatibility mode. To update:
-
+**Solution:**
 ```bash
-ccr project list  # Re-saves with current schema
+ccr project scan <project-id>
 ```
+
+## Workflow Summary
+
+### Adding New Agents (For Later)
+
+When you want to add a new agent type:
+
+1. Create agent file in `.bmad/bmm/agents/new-agent.md`
+2. Run `ccr project scan <project-id>` to inject CCR-AGENT-ID
+3. Configure your preferred model
+4. Commit agent file: `git add .bmad/bmm/agents/new-agent.md`
+5. Team members pull and run `ccr project scan` to detect it
+
+### Receiving New Agents from Teammates
+
+When a teammate adds a new agent:
+
+1. `git pull` to receive the agent file
+2. Run `ccr project scan <project-id>` to detect it
+3. Configure your preferred model for the agent
+4. Start working with the new agent
 
 ## Next Steps
 
 ### Learn More About CCR
 
 - [CLI Commands Reference](/cli/commands/other)
-- [Git-Based Configuration Sharing](/team/git-workflow)
+- [Git-Based Agent Sharing](/team/git-workflow)
 - [Configuration Guide](/cli/config/basic)
 
 ### Customize Your Setup
 
 Once you're comfortable with the basics, you can:
 
-1. **Configure additional agents:**
+1. **Reconfigure agent models:**
    ```bash
    ccr project configure <project-id>
    ```
@@ -204,9 +250,9 @@ Once you're comfortable with the basics, you can:
 
 ### Join Your Team's Workflow
 
-1. **Join team chat** where agent configurations are discussed
-2. **Subscribe to pull requests** affecting `projects.json`
-3. **Coordinate changes** with your team before configuring agents
+1. **Join team chat** where agent definitions are discussed
+2. **Subscribe to pull requests** affecting `.bmad/bmm/agents/`
+3. **Coordinate changes** - agent files are shared via git
 4. **Document your choices** in commit messages
 
 ## Getting Help
@@ -239,8 +285,8 @@ ccr model
 ### Contact Your Team
 
 - Ask in team chat about agent configuration conventions
-- Check pull requests for recent configuration changes
-- Review the team's `projects.json` for examples
+- Check pull requests for recent agent additions
+- Review `.bmad/bmm/agents/` for examples
 
 ### External Resources
 
@@ -251,8 +297,8 @@ ccr model
 
 ### Do's ✅
 
-- ✅ Copy `projects.json` from your team's repo
-- ✅ Commit `projects.json` to share configurations
+- ✅ Pull agent `.md` files from git
+- ✅ Run `ccr project scan` to detect agents
 - ✅ Keep API keys in `config.json` (not in git)
 - ✅ Use environment variables for CI/CD
 
@@ -262,6 +308,7 @@ ccr model
 - ❌ Share API keys in chat or email
 - ❌ Put API keys in environment-specific config files that get committed
 - ❌ Hard-code API keys in scripts
+- ❌ Commit `projects.json` (it's local-only in `~/.claude-code-router/`)
 
 ## Checklist
 
@@ -269,13 +316,13 @@ Use this checklist to verify your onboarding is complete:
 
 - [ ] Repository cloned
 - [ ] CCR installed globally (`npm install -g @musistudio/claude-code-router`)
-- [ ] `projects.json` copied to `~/.claude-code-router/`
+- [ ] Project scanned with `ccr project scan <project-id>`
 - [ ] API keys configured in `~/.claude-code-router/config.json`
 - [ ] Can run `ccr code` successfully
-- [ ] Agent routing works for team's configured agents
+- [ ] Agent routing works for team's agents
 - [ ] Joined team chat for coordination
-- [ ] Reviewed team's `projects.json` configuration
+- [ ] Reviewed team's agent files in `.bmad/bmm/agents/`
 
 **Welcome to the team! 🎉**
 
-You're now ready to use CCR with your team's pre-configured agent routing.
+You're now ready to use CCR with your team's shared agent definitions and your own model preferences.
