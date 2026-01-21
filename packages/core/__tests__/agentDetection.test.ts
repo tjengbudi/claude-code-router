@@ -15,7 +15,12 @@ describe('extractAgentId()', () => {
     jest.clearAllMocks();
   });
 
-  test('should extract agent ID from system prompt', () => {
+  // Priority: P0
+  test('3.3-AC1-001: should extract agent ID from system prompt', () => {
+    // Given: A request with valid agent ID in system prompt
+    // When: Extracting agent ID from the request
+    // Then: Should return the valid UUID v4 agent ID
+
     const validId = '550e8400-e29b-41d4-a716-446655440000';
     const req = {
       body: {
@@ -33,7 +38,12 @@ describe('extractAgentId()', () => {
     expect(mockLogger.debug).toHaveBeenCalledWith({ agentId: validId }, 'Agent ID extracted from system prompt');
   });
 
-  test('should extract agent ID from message history', () => {
+  // Priority: P0
+  test('3.3-AC1-002: should extract agent ID from message history', () => {
+    // Given: A request with agent ID in message history (reflection loop scenario)
+    // When: Extracting agent ID from the request
+    // Then: Should return the agent ID from message history
+
     const validId = '7c9e6679-7425-40de-944b-e07fc1f90ae7';
     const req = {
       body: {
@@ -52,7 +62,12 @@ describe('extractAgentId()', () => {
     expect(mockLogger.debug).toHaveBeenCalledWith({ agentId: validId }, 'Agent ID extracted from message history');
   });
 
-  test('should return undefined for invalid UUID format', () => {
+  // Priority: P0
+  test('3.3-AC2-001: should return undefined for invalid UUID format', () => {
+    // Given: A request with invalid UUID format (UUID v1)
+    // When: Extracting agent ID from the request
+    // Then: Should return undefined and log warning (security validation)
+
     // UUID v1 format - matches regex pattern but fails validation
     const req = {
       body: {
@@ -73,7 +88,12 @@ describe('extractAgentId()', () => {
     );
   });
 
-  test('should return undefined when no agent ID found', () => {
+  // Priority: P0
+  test('3.3-AC1-003: should return undefined when no agent ID found', () => {
+    // Given: A regular request without agent ID marker
+    // When: Extracting agent ID from the request
+    // Then: Should return undefined (vanilla routing)
+
     const req = {
       body: {
         system: [
@@ -87,7 +107,12 @@ describe('extractAgentId()', () => {
     expect(mockLogger.debug).toHaveBeenCalledWith('No agent ID found in request');
   });
 
-  test('should return first valid UUID when multiple IDs present', () => {
+  // Priority: P1
+  test('3.3-AC1-004: should return first valid UUID when multiple IDs present', () => {
+    // Given: A request with multiple agent ID markers
+    // When: Extracting agent ID from the request
+    // Then: Should return the first valid UUID found
+
     const firstId = '550e8400-e29b-41d4-a716-446655440000';
     const secondId = '7c9e6679-7425-40de-944b-e07fc1f90ae7';
     const req = {
@@ -105,7 +130,12 @@ describe('extractAgentId()', () => {
     expect(result).toBe(firstId);
   });
 
-  test('should handle empty system and messages arrays', () => {
+  // Priority: P1
+  test('3.3-AC3-001: should handle empty system and messages arrays', () => {
+    // Given: A request with empty system and messages arrays
+    // When: Extracting agent ID from the request
+    // Then: Should return undefined gracefully
+
     const req = {
       body: {
         system: [],
@@ -118,7 +148,12 @@ describe('extractAgentId()', () => {
     expect(mockLogger.debug).toHaveBeenCalledWith('No agent ID found in request');
   });
 
-  test('should handle missing body fields gracefully', () => {
+  // Priority: P1
+  test('3.3-AC3-002: should handle missing body fields gracefully', () => {
+    // Given: A request with missing body fields
+    // When: Extracting agent ID from the request
+    // Then: Should return undefined without throwing errors
+
     const req = { body: {} };
 
     const result = extractAgentId(req, mockLogger);
@@ -126,7 +161,12 @@ describe('extractAgentId()', () => {
     expect(mockLogger.debug).toHaveBeenCalledWith('No agent ID found in request');
   });
 
-  test('should handle missing req.body', () => {
+  // Priority: P1
+  test('3.3-AC3-003: should handle missing req.body', () => {
+    // Given: A malformed request without body
+    // When: Extracting agent ID from the request
+    // Then: Should return undefined and log malformed request
+
     const req = {};
 
     const result = extractAgentId(req, mockLogger);
@@ -134,7 +174,12 @@ describe('extractAgentId()', () => {
     expect(mockLogger.debug).toHaveBeenCalledWith('Malformed request: missing body');
   });
 
-  test('should prefer system prompt over message history', () => {
+  // Priority: P0
+  test('3.3-AC1-005: should prefer system prompt over message history', () => {
+    // Given: A request with agent IDs in both system prompt and message history
+    // When: Extracting agent ID from the request
+    // Then: Should return the agent ID from system prompt (priority order)
+
     const systemId = '550e8400-e29b-41d4-a716-446655440000';
     const messageId = '7c9e6679-7425-40de-944b-e07fc1f90ae7';
     const req = {
@@ -152,7 +197,12 @@ describe('extractAgentId()', () => {
     expect(result).toBe(systemId);
   });
 
-  test('should validate extracted UUID format', () => {
+  // Priority: P0
+  test('3.3-AC2-002: should validate extracted UUID format', () => {
+    // Given: A request with UUID v5 format (invalid for agent IDs)
+    // When: Extracting agent ID from the request
+    // Then: Should return undefined and log warning (only UUID v4 allowed)
+
     // UUID v5 format - matches regex pattern but fails validation
     const req = {
       body: {
@@ -173,7 +223,12 @@ describe('extractAgentId()', () => {
     );
   });
 
-  test('should work without logger parameter', () => {
+  // Priority: P2
+  test('3.3-AC3-004: should work without logger parameter', () => {
+    // Given: A request with valid agent ID and no logger provided
+    // When: Extracting agent ID without logger
+    // Then: Should not throw and return the agent ID
+
     const validId = '550e8400-e29b-41d4-a716-446655440000';
     const req = {
       body: {
@@ -192,7 +247,12 @@ describe('extractAgentId()', () => {
     expect(result).toBe(validId);
   });
 
-  test('should handle system block with valid text type', () => {
+  // Priority: P1
+  test('3.3-AC1-006: should handle system block with valid text type', () => {
+    // Given: A request with system block containing text type
+    // When: Extracting agent ID from the request
+    // Then: Should successfully extract agent ID from text type block
+
     const validId = '550e8400-e29b-41d4-a716-446655440000';
     const req = {
       body: {
@@ -206,7 +266,12 @@ describe('extractAgentId()', () => {
     expect(result).toBe(validId);  // Valid text type should return the ID
   });
 
-  test('should handle system block with non-text type', () => {
+  // Priority: P1
+  test('3.3-AC1-007: should handle system block with non-text type', () => {
+    // Given: A request with system block containing non-text type (e.g., image)
+    // When: Extracting agent ID from the request
+    // Then: Should return undefined (only text blocks are searched)
+
     const validId = '550e8400-e29b-41d4-a716-446655440000';
     const req = {
       body: {
@@ -220,7 +285,12 @@ describe('extractAgentId()', () => {
     expect(result).toBeUndefined();  // Should not match non-text blocks
   });
 
-  test('should handle message with non-string content', () => {
+  // Priority: P1
+  test('3.3-AC1-008: should handle message with non-string content', () => {
+    // Given: A request with message containing array content (not string)
+    // When: Extracting agent ID from the request
+    // Then: Should return undefined (only string content is searched)
+
     const req = {
       body: {
         system: [],
@@ -243,7 +313,12 @@ describe('Story 2.3: Router.default Fallback', () => {
   // Note: Full routing integration tests are in integration/routing.test.ts
   // These tests focus on the extractAgentId function which is the core of agent detection
 
-  test('should extract valid agent ID for routing lookup', () => {
+  // Priority: P0
+  test('2.3-AC1-001: should extract valid agent ID for routing lookup', () => {
+    // Given: A request with valid agent ID for routing
+    // When: Extracting agent ID for model lookup
+    // Then: Should return valid agent ID to be used with projectManager.getModelByAgentId()
+
     const agentId = '550e8400-e29b-41d4-a716-446655440000';
     const req = {
       body: {
@@ -259,7 +334,12 @@ describe('Story 2.3: Router.default Fallback', () => {
     // If the agent has no model configured, undefined is returned and Router.default is used
   });
 
-  test('should return undefined for non-agent requests (vanilla routing)', () => {
+  // Priority: P0
+  test('2.3-AC1-002: should return undefined for non-agent requests (vanilla routing)', () => {
+    // Given: A regular request without agent ID marker
+    // When: Extracting agent ID from the request
+    // Then: Should return undefined to use existing vanilla routing (backward compatibility)
+
     const req = {
       body: {
         system: [
@@ -273,7 +353,12 @@ describe('Story 2.3: Router.default Fallback', () => {
     // Non-agent requests should use existing vanilla routing (backward compatibility)
   });
 
-  test('should handle malformed agent ID tag gracefully', () => {
+  // Priority: P1
+  test('2.3-AC4-001: should handle malformed agent ID tag gracefully', () => {
+    // Given: A request with malformed agent ID (UUID v1 format)
+    // When: Extracting agent ID from the request
+    // Then: Should return undefined and fallback to Router.default (graceful degradation)
+
     // Use UUID v1 format (matches regex but fails UUID v4 validation)
     const req = {
       body: {
@@ -289,7 +374,12 @@ describe('Story 2.3: Router.default Fallback', () => {
     // Malformed IDs should fallback to Router.default (graceful degradation)
   });
 
-  test('should validate UUID v4 format for security', () => {
+  // Priority: P0
+  test('2.3-AC5-001: should validate UUID v4 format for security', () => {
+    // Given: Various invalid UUID formats
+    // When: Extracting agent ID from requests
+    // Then: Should reject all invalid UUIDs for security (NFR-S3)
+
     // Test various invalid UUID formats
     const invalidUUIDs = [
       'not-a-uuid',
@@ -314,7 +404,12 @@ describe('Story 2.3: Router.default Fallback', () => {
     }
   });
 
-  test('should support multiple agents with same Router.default', () => {
+  // Priority: P0
+  test('2.3-AC1-003: should support multiple agents with same Router.default', () => {
+    // Given: Two different agent IDs
+    // When: Extracting agent IDs from separate requests
+    // Then: Both should be extracted correctly (both can use same Router.default if unconfigured)
+
     const agentId1 = '550e8400-e29b-41d4-a716-446655440000';
     const agentId2 = '7c9e6679-7425-40de-944b-e07fc1f90ae7';
 
@@ -339,7 +434,12 @@ describe('Story 2.3: Router.default Fallback', () => {
     // both would use the same Router.default (consistent behavior)
   });
 
-  test('should work with message history fallback for agent ID', () => {
+  // Priority: P0
+  test('2.3-AC1-004: should work with message history fallback for agent ID', () => {
+    // Given: A request with agent ID in message history (reflection loop scenario)
+    // When: Extracting agent ID from the request
+    // Then: Should extract from message history to support reflection loops
+
     const agentId = '550e8400-e29b-41d4-a716-446655440000';
     const req = {
       body: {
@@ -356,7 +456,12 @@ describe('Story 2.3: Router.default Fallback', () => {
     // CCR-AGENT-ID is not in system prompt (reflection loops)
   });
 
-  test('should prefer system prompt over message history', () => {
+  // Priority: P0
+  test('2.3-AC1-005: should prefer system prompt over message history', () => {
+    // Given: A request with different agent IDs in system prompt and message history
+    // When: Extracting agent ID from the request
+    // Then: Should prefer system prompt for consistent behavior
+
     const systemAgentId = '550e8400-e29b-41d4-a716-446655440000';
     const messageAgentId = '7c9e6679-7425-40de-944b-e07fc1f90ae7';
 
@@ -382,7 +487,12 @@ describe('Story 2.3: Router.default Fallback', () => {
 
 describe('Story 3.1: Session-Based Caching', () => {
   describe('extractSessionId()', () => {
-    test('should extract session ID from metadata.user_id with _session_ delimiter', () => {
+    // Priority: P0
+    test('3.1-AC1-001: should extract session ID from metadata.user_id with _session_ delimiter', () => {
+      // Given: A request with user_id containing _session_ delimiter
+      // When: Extracting session ID from the request
+      // Then: Should return the session ID after _session_ delimiter
+
       const req = {
         body: {
           metadata: {
@@ -395,7 +505,12 @@ describe('Story 3.1: Session-Based Caching', () => {
       expect(result).toBe('abc456');
     });
 
-    test('should trim whitespace from extracted session ID', () => {
+    // Priority: P1
+    test('3.1-AC1-002: should trim whitespace from extracted session ID', () => {
+      // Given: A request with session ID containing whitespace
+      // When: Extracting session ID from the request
+      // Then: Should return trimmed session ID
+
       const req = {
         body: {
           metadata: {
@@ -408,7 +523,12 @@ describe('Story 3.1: Session-Based Caching', () => {
       expect(result).toBe('spaces');
     });
 
-    test('should return default when no _session_ delimiter found', () => {
+    // Priority: P0
+    test('3.1-AC2-001: should return default when no _session_ delimiter found', () => {
+      // Given: A request without _session_ delimiter in user_id
+      // When: Extracting session ID from the request
+      // Then: Should return 'default' as fallback
+
       const req = {
         body: {
           metadata: {
@@ -421,7 +541,12 @@ describe('Story 3.1: Session-Based Caching', () => {
       expect(result).toBe('default');
     });
 
-    test('should return default when metadata.user_id is missing', () => {
+    // Priority: P1
+    test('3.1-AC2-002: should return default when metadata.user_id is missing', () => {
+      // Given: A request with empty metadata
+      // When: Extracting session ID from the request
+      // Then: Should return 'default' as fallback
+
       const req = {
         body: {
           metadata: {}
@@ -432,7 +557,12 @@ describe('Story 3.1: Session-Based Caching', () => {
       expect(result).toBe('default');
     });
 
-    test('should return default when metadata is missing', () => {
+    // Priority: P1
+    test('3.1-AC2-003: should return default when metadata is missing', () => {
+      // Given: A request without metadata field
+      // When: Extracting session ID from the request
+      // Then: Should return 'default' as fallback
+
       const req = {
         body: {}
       };
@@ -441,14 +571,24 @@ describe('Story 3.1: Session-Based Caching', () => {
       expect(result).toBe('default');
     });
 
-    test('should return default when body is missing', () => {
+    // Priority: P1
+    test('3.1-AC2-004: should return default when body is missing', () => {
+      // Given: A malformed request without body
+      // When: Extracting session ID from the request
+      // Then: Should return 'default' as fallback (graceful degradation)
+
       const req = {};
 
       const result = extractSessionId(req);
       expect(result).toBe('default');
     });
 
-    test('should handle empty session ID after delimiter', () => {
+    // Priority: P1
+    test('3.1-AC2-005: should handle empty session ID after delimiter', () => {
+      // Given: A request with empty string after _session_ delimiter
+      // When: Extracting session ID from the request
+      // Then: Should return 'default' as fallback
+
       const req = {
         body: {
           metadata: {
@@ -461,7 +601,12 @@ describe('Story 3.1: Session-Based Caching', () => {
       expect(result).toBe('default');
     });
 
-    test('should extract session ID with complex formats', () => {
+    // Priority: P1
+    test('3.1-AC1-003: should extract session ID with complex formats', () => {
+      // Given: Various complex session ID formats
+      // When: Extracting session IDs from requests
+      // Then: Should correctly parse all formats
+
       const testCases = [
         { input: 'user_123_session_session-id-123', expected: 'session-id-123' },
         { input: 'user_abc_session_456', expected: '456' },
@@ -482,7 +627,12 @@ describe('Story 3.1: Session-Based Caching', () => {
       }
     });
 
-    test('should handle multiple _session_ occurrences (use first split)', () => {
+    // Priority: P2
+    test('3.1-AC1-004: should handle multiple _session_ occurrences (use first split)', () => {
+      // Given: A user_id with multiple _session_ delimiters
+      // When: Extracting session ID from the request
+      // Then: Should use the first occurrence after split
+
       const req = {
         body: {
           metadata: {
@@ -499,7 +649,12 @@ describe('Story 3.1: Session-Based Caching', () => {
   });
 
   describe('Session ID Performance Requirements', () => {
-    test('should extract session ID in less than 1ms (NFR-P1 target)', () => {
+    // Priority: P1
+    test('3.1-NFR-P1-001: should extract session ID in less than 1ms (NFR-P1 target)', () => {
+      // Given: A request with session ID
+      // When: Extracting session ID 1000 times
+      // Then: Average extraction time should be < 1ms (performance requirement)
+
       const req = {
         body: {
           metadata: {

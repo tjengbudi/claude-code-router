@@ -127,7 +127,12 @@ function calculateCacheMetrics(hits: number, misses: number): CacheMetrics {
 // ========================================
 
 describe('Story 3.6: Performance Test Infrastructure', () => {
-  test('should verify performance measurement utilities work correctly', async () => {
+  // Priority: P2
+  test('3.6-INFRA-001: should verify performance measurement utilities work correctly', async () => {
+    // Given: Performance measurement utilities (measureLatency, runBenchmark)
+    // When: Testing utility functions with simple operations
+    // Then: Should return valid performance metrics
+
     // Test measureLatency
     const latency = measureLatency(() => {
       // Simple operation
@@ -154,7 +159,12 @@ describe('Story 3.6: Performance Test Infrastructure', () => {
 // ========================================
 
 describe('AC1: Agent ID Detection Performance (NFR-P1)', () => {
-  test('should detect agent ID in < 10ms (average)', async () => {
+  // Priority: P0
+  test('3.6-AC1-001: should detect agent ID in < 10ms (average)', async () => {
+    // Given: A request with agent ID in system prompt
+    // When: Running agent ID detection benchmark (100 iterations)
+    // Then: Average, p95, and p99 latency should be under 10ms (NFR-P1)
+
     const mockReq = {
       body: {
         system: [{ type: 'text', text: '<!-- CCR-AGENT-ID: test-agent-uuid-12345 -->' }],
@@ -171,7 +181,12 @@ describe('AC1: Agent ID Detection Performance (NFR-P1)', () => {
     expect(result.p99).toBeLessThan(MAX_AGENT_DETECTION_LATENCY_MS);
   });
 
-  test('should handle large system prompts efficiently (< 10ms)', async () => {
+  // Priority: P1
+  test('3.6-AC1-002: should handle large system prompts efficiently (< 10ms)', async () => {
+    // Given: A request with 10KB system prompt containing agent ID
+    // When: Running agent ID detection benchmark
+    // Then: Should still complete in < 10ms despite large prompt size
+
     const largePrompt = 'x'.repeat(10000); // 10KB prompt
     const mockReq = {
       body: {
@@ -190,7 +205,12 @@ describe('AC1: Agent ID Detection Performance (NFR-P1)', () => {
     expect(result.p95).toBeLessThan(MAX_AGENT_DETECTION_LATENCY_MS);
   });
 
-  test('should handle edge case: no agent ID efficiently (< 1ms)', async () => {
+  // Priority: P1
+  test('3.6-AC1-003: should handle edge case: no agent ID efficiently (< 1ms)', async () => {
+    // Given: A request without agent ID marker
+    // When: Running agent ID detection benchmark
+    // Then: Early exit optimization should make this very fast (< 1ms)
+
     const mockReq = {
       body: {
         system: [{ type: 'text', text: 'No agent ID here' }],
@@ -205,7 +225,12 @@ describe('AC1: Agent ID Detection Performance (NFR-P1)', () => {
     expect(result.avg).toBeLessThan(1);
   });
 
-  test('should extract session ID efficiently (< 1ms)', async () => {
+  // Priority: P0
+  test('3.6-AC1-004: should extract session ID efficiently (< 1ms)', async () => {
+    // Given: A request with user_id containing session information
+    // When: Running session ID extraction benchmark
+    // Then: Simple string split should be sub-millisecond
+
     const mockReq = {
       body: {
         metadata: { user_id: 'user_123_session_abc456' },
@@ -223,7 +248,12 @@ describe('AC1: Agent ID Detection Performance (NFR-P1)', () => {
 });
 
 describe('AC2: Cache Lookup Performance (NFR-P1)', () => {
-  test('should lookup from cache in < 5ms (average)', async () => {
+  // Priority: P0
+  test('3.6-AC2-001: should lookup from cache in < 5ms (average)', async () => {
+    // Given: A cache with pre-populated entry
+    // When: Running cache lookup benchmark (100 iterations)
+    // Then: Average and p95 latency should be under 5ms (NFR-P1)
+
     const cache = new LRUCache<string, string>({ max: 1000 });
     cache.set('session:project:agent', 'openai,gpt-4o');
 
@@ -235,7 +265,12 @@ describe('AC2: Cache Lookup Performance (NFR-P1)', () => {
     expect(result.p95).toBeLessThan(MAX_CACHE_LOOKUP_LATENCY_MS);
   });
 
-  test('should maintain O(1) performance at various cache sizes', async () => {
+  // Priority: P1
+  test('3.6-AC2-002: should maintain O(1) performance at various cache sizes', async () => {
+    // Given: Caches of different sizes (10, 100, 500, 1000 entries)
+    // When: Measuring lookup performance at each size
+    // Then: Latency variance should be < 1ms (demonstrates O(1) complexity)
+
     const sizes = [10, 100, 500, 1000];
     const results: BenchmarkResult[] = [];
 
@@ -270,7 +305,12 @@ describe('AC2: Cache Lookup Performance (NFR-P1)', () => {
     });
   });
 
-  test('should handle cache set operation efficiently (< 1ms)', async () => {
+  // Priority: P1
+  test('3.6-AC2-003: should handle cache set operation efficiently (< 1ms)', async () => {
+    // Given: An empty cache with max capacity 1000
+    // When: Running cache set operation benchmark
+    // Then: Average latency should be under 1ms
+
     const cache = new LRUCache<string, string>({ max: 1000 });
 
     const result = await runBenchmark(() => {
@@ -286,7 +326,12 @@ describe('AC2: Cache Lookup Performance (NFR-P1)', () => {
 // ========================================
 
 describe('AC3: Total Routing Overhead (NFR-P1)', () => {
-  test('should complete routing in < 50ms (including agent detection + cache lookup)', async () => {
+  // Priority: P0
+  test('3.6-AC3-001: should complete routing in < 50ms (including agent detection + cache lookup)', async () => {
+    // Given: A request with agent ID and pre-populated cache
+    // When: Running full routing flow benchmark (agent detection + cache lookup)
+    // Then: Average and p95 latency should be under 50ms (NFR-P1)
+
     const cache = new LRUCache<string, string>({ max: 1000 });
     const mockReq = {
       body: {
@@ -312,7 +357,12 @@ describe('AC3: Total Routing Overhead (NFR-P1)', () => {
     expect(result.p95).toBeLessThan(MAX_ROUTING_OVERHEAD_MS);
   });
 
-  test('should show cache hit performance advantage', async () => {
+  // Priority: P1
+  test('3.6-AC3-002: should show cache hit performance advantage', async () => {
+    // Given: A request with agent ID
+    // When: Comparing cache miss vs cache hit latency
+    // Then: Cache hit should be very fast (< 5ms), demonstrating performance advantage
+
     const cache = new LRUCache<string, string>({ max: 1000 });
     const mockReq = {
       body: {
@@ -351,7 +401,12 @@ describe('AC3: Total Routing Overhead (NFR-P1)', () => {
     console.log(`Cache hit avg latency: ${avgHitLatency.toFixed(4)}ms (subsequent requests)`);
   });
 
-  test('should handle full routing with project detection simulation', async () => {
+  // Priority: P0
+  test('3.6-AC3-003: should handle full routing with project detection simulation', async () => {
+    // Given: A request with agent ID and session information
+    // When: Simulating full routing flow with project detection
+    // Then: Average and p95 latency should be under 50ms
+
     const cache = new LRUCache<string, string>({ max: 1000 });
     const mockReq = {
       body: {
@@ -381,7 +436,12 @@ describe('AC3: Total Routing Overhead (NFR-P1)', () => {
 });
 
 describe('AC5: Cache Efficiency Validation (NFR-P2)', () => {
-  test('should achieve ≥90% hit rate in 20-request workflow with 2 agents', async () => {
+  // Priority: P0
+  test('3.6-AC5-001: should achieve ≥90% hit rate in 20-request workflow with 2 agents', async () => {
+    // Given: A 20-request workflow alternating between 2 agents
+    // When: Simulating cache hits and misses
+    // Then: Should achieve ≥90% cache hit rate (18 hits, 2 misses)
+
     const cache = new LRUCache<string, string>({ max: 1000 });
     const agents = ['agent-1', 'agent-2'];
     const sessionId = 'test-session';
@@ -413,7 +473,12 @@ describe('AC5: Cache Efficiency Validation (NFR-P2)', () => {
     console.log(`20-request workflow: ${metrics.hits} hits, ${metrics.misses} misses, ${metrics.hitRate.toFixed(2)}% hit rate`);
   });
 
-  test('should show I/O reduction benefits with cache', async () => {
+  // Priority: P1
+  test('3.6-AC5-002: should show I/O reduction benefits with cache', async () => {
+    // Given: A 20-request workflow with cache vs without cache
+    // When: Calculating total I/O time with and without cache
+    // Then: Should achieve ≥90% I/O time reduction
+
     const cache = new LRUCache<string, string>({ max: 1000 });
     const sessionId = 'io-reduction-test';
     const projectId = 'test-project';
@@ -451,7 +516,12 @@ describe('AC5: Cache Efficiency Validation (NFR-P2)', () => {
     console.log(`I/O reduction: ${reductionPercent.toFixed(2)}% (${withoutCacheTime}ms → ${totalIoTime.toFixed(2)}ms)`);
   });
 
-  test('should handle multi-request workflow with varied agents efficiently', async () => {
+  // Priority: P1
+  test('3.6-AC5-003: should handle multi-request workflow with varied agents efficiently', async () => {
+    // Given: A 25-request workflow cycling through 5 different agents
+    // When: Tracking cache hits and misses
+    // Then: Should achieve 80% hit rate (5 misses, 20 hits)
+
     const cache = new LRUCache<string, string>({ max: 1000 });
     const agents = ['dev', 'sm', 'tea', 'architect', 'pm'];
     const sessionId = 'multi-agent-test';
@@ -489,7 +559,12 @@ describe('AC5: Cache Efficiency Validation (NFR-P2)', () => {
 // ========================================
 
 describe('AC4: System Overhead vs Vanilla CCR (NFR-P3)', () => {
-  test('should add minimal overhead compared to vanilla routing', async () => {
+  // Priority: P1
+  test('3.6-AC4-001: should add minimal overhead compared to vanilla routing', async () => {
+    // Given: Vanilla CCR request (no agent) vs agent-enabled CCR request
+    // When: Benchmarking both routing paths
+    // Then: Absolute overhead should be < 1ms (negligible for sub-millisecond operations)
+
     // Vanilla CCR: No agent tag (fast path through router)
     const vanillaReq = {
       body: {
@@ -543,7 +618,12 @@ describe('AC4: System Overhead vs Vanilla CCR (NFR-P3)', () => {
     expect(agentResult.avg).toBeLessThan(1);
   });
 
-  test('should demonstrate practical overhead is negligible vs API call time', async () => {
+  // Priority: P2
+  test('3.6-AC4-002: should demonstrate practical overhead is negligible vs API call time', async () => {
+    // Given: Agent routing overhead vs typical LLM API call time (1 second)
+    // When: Calculating overhead percentage
+    // Then: Routing overhead should be < 0.1% of API call time
+
     const mockReq = {
       body: {
         system: [{ type: 'text', text: '<!-- CCR-AGENT-ID: test-agent-uuid -->' }],
@@ -581,7 +661,12 @@ describe('AC4: System Overhead vs Vanilla CCR (NFR-P3)', () => {
 // ========================================
 
 describe('AC6: Long-Running Session Performance (NFR-P4, NFR-SC3)', () => {
-  test('should maintain performance over 100+ requests', async () => {
+  // Priority: P1
+  test('3.6-AC6-001: should maintain performance over 100+ requests', async () => {
+    // Given: A long-running session with 100 requests across 5 agents
+    // When: Measuring cache lookup latency throughout the session
+    // Then: Performance should not degrade (last quartile < 20% slower than first)
+
     const cache = new LRUCache<string, string>({ max: 1000 });
     const sessionId = 'long-session';
     const agents = ['dev', 'tea', 'sm', 'architect', 'pm'];
@@ -620,7 +705,12 @@ describe('AC6: Long-Running Session Performance (NFR-P4, NFR-SC3)', () => {
     console.log(`100+ request session: first quartile avg ${firstAvg.toFixed(4)}ms, last quartile avg ${lastAvg.toFixed(4)}ms`);
   });
 
-  test('should handle cache eviction efficiently (< 10ms)', async () => {
+  // Priority: P1
+  test('3.6-AC6-002: should handle cache eviction efficiently (< 10ms)', async () => {
+    // Given: A cache at max capacity (1000 entries)
+    // When: Adding new entries that trigger evictions
+    // Then: Eviction operations should complete in < 10ms (NFR-P4)
+
     const cache = new LRUCache<string, string>({ max: 1000 });
 
     // Fill cache to capacity
@@ -651,7 +741,12 @@ describe('AC6: Long-Running Session Performance (NFR-P4, NFR-SC3)', () => {
     console.log(`Cache eviction: avg ${avgEvictionTime.toFixed(4)}ms, max ${maxEvictionTime.toFixed(4)}ms`);
   });
 
-  test('should not leak memory over extended sessions', async () => {
+  // Priority: P2
+  test('3.6-AC6-003: should not leak memory over extended sessions', async () => {
+    // Given: A long-running session with 500 requests
+    // When: Measuring memory growth
+    // Then: Memory increase should be < 50MB (NFR-SC3)
+
     // Skip test if global.gc is not available, but log warning
     if (typeof global.gc !== 'function') {
       console.warn('⚠️  Memory leak test skipped: global.gc not available');
@@ -686,7 +781,12 @@ describe('AC6: Long-Running Session Performance (NFR-P4, NFR-SC3)', () => {
     console.log(`Memory growth over 500 requests: ${memoryIncreaseMB.toFixed(2)}MB`);
   });
 
-  test('should handle cache at max capacity efficiently', async () => {
+  // Priority: P1
+  test('3.6-AC6-004: should handle cache at max capacity efficiently', async () => {
+    // Given: A cache at max capacity with 100 additional entries
+    // When: Adding entries that trigger continuous evictions
+    // Then: All operations should remain fast (< 10ms)
+
     const cache = new LRUCache<string, string>({ max: 1000 });
 
     // Fill cache to capacity
@@ -722,7 +822,12 @@ describe('AC6: Long-Running Session Performance (NFR-P4, NFR-SC3)', () => {
 // ========================================
 
 describe('Story 3.6: Performance Validation Summary', () => {
-  test('should validate all NFR targets are met', async () => {
+  // Priority: P0
+  test('3.6-SUMMARY-001: should validate all NFR targets are met', async () => {
+    // Given: All performance requirements (AC1-AC6)
+    // When: Running comprehensive validation of all NFR targets
+    // Then: All performance targets should be met (100% pass rate)
+
     const results: { [key: string]: boolean } = {};
 
     // AC1: Agent ID detection < 10ms
