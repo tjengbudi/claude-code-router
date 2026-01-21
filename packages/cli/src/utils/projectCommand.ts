@@ -1,7 +1,9 @@
 import { ProjectManager, Validators, PROJECTS_FILE } from '@CCR/shared';
 import path from 'path';
-import type { RescanResult } from '@CCR/shared';
+import type { RescanResult, AgentConfig } from '@CCR/shared';
 import { interactiveModelConfiguration } from '../interactive/modelConfig';
+import { confirm } from '@inquirer/prompts';
+import { ExitPromptError } from '@inquirer/prompts';
 
 /**
  * Handle project commands
@@ -202,6 +204,41 @@ async function handleProjectScan(args: string[]): Promise<void> {
 
       console.log(`\n  Total agents: ${result.totalAgents}`);
     }
+
+    // Story 4.3: Prompt for configuration when new agents detected
+    if (result.newAgents.length > 0) {
+      try {
+        const configureNow = await confirm({
+          message: 'Configure new agents now?',
+          default: true
+        });
+
+        if (configureNow) {
+          // Fetch full AgentConfig objects for new agents
+          const project = await pm.getProject(projectId);
+          if (project) {
+            // Filter agents that are newly detected
+            const newAgentConfigs = project.agents.filter((agent: AgentConfig) =>
+              result.newAgents.includes(agent.name)
+            );
+
+            // Call interactive configuration with new agents only
+            await configureNewAgentsInteractive(projectId, newAgentConfigs);
+          }
+        } else {
+          // Skip configuration path (AC5)
+          console.log('\nNew agents added without model configuration.');
+          console.log('Configure later with: ccr project configure <id>');
+          console.log('New agents will use Router.default until configured.');
+        }
+      } catch (error) {
+        if (error instanceof ExitPromptError) {
+          console.log('\nConfiguration interrupted');
+        } else {
+          throw error;
+        }
+      }
+    }
   } catch (error) {
     console.error(`✗ Error: ${(error as Error).message}`);
 
@@ -209,6 +246,80 @@ async function handleProjectScan(args: string[]): Promise<void> {
       console.log('\nList available projects: ccr project list');
     }
   }
+}
+
+/**
+ * Interactive configuration for new agents (Story 4.3)
+ * Prompts user to configure models for newly detected agents
+ * @param projectId - Project ID
+ * @param newAgents - List of newly detected agents to configure
+ */
+async function configureNewAgentsInteractive(
+  projectId: string,
+  newAgents: AgentConfig[]
+): Promise<void> {
+  const pm = new ProjectManager(PROJECTS_FILE);
+
+  if (newAgents.length === 0) {
+    return; // AC1a: Empty new agents handling
+  }
+
+  console.log('\nConfiguring new agents...\n');
+
+  // Load available models from config.json
+  const { getAvailableModels } = await import('../interactive/modelConfig.js');
+  const availableModels = await getAvailableModels();
+
+  const configuredAgents: Array<{ name: string; model: string }> = [];
+
+  // Configure each new agent
+  for (const agent of newAgents) {
+    const { select } = await import('@inquirer/prompts');
+
+    const modelChoices = availableModels.map(m => ({
+      value: m.value,
+      name: m.label
+    }));
+    modelChoices.push({
+      value: 'default',
+      name: '[Use Router.default]'
+    });
+
+    const selectedModel = await select({
+      message: `Select model for ${agent.name}:`,
+      choices: modelChoices
+    });
+
+    const actualModel = selectedModel === 'default' ? undefined : selectedModel;
+
+    // Validate model before saving
+    const { Validators } = await import('@CCR/shared');
+    if (actualModel !== undefined && !Validators.isValidModelString(actualModel)) {
+      console.error(`✗ Invalid model format: ${actualModel}`);
+      console.log('  Model must be in format: provider,modelname');
+      continue;
+    }
+
+    // Save model assignment
+    await pm.setAgentModel(projectId, agent.id, actualModel);
+
+    const modelDisplay = actualModel || '[default]';
+    console.log(`✓ ${agent.name} → ${modelDisplay}`);
+
+    configuredAgents.push({ name: agent.name, model: modelDisplay });
+  }
+
+  // Display configuration summary (AC4)
+  console.log(`\n✓ Configured ${configuredAgents.length} new agent(s):`);
+  configuredAgents.forEach(agent => {
+    console.log(`  - ${agent.name} → ${agent.model}`);
+  });
+
+  const project = await pm.getProject(projectId);
+  console.log(`\nTotal agents: ${project?.agents.length || 0}`);
+
+  // Git workflow guidance
+  console.log('\nCommit projects.json to share configuration with team');
 }
 
 /**

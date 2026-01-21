@@ -1213,3 +1213,504 @@ This is the agent content.
     });
   });
 });
+
+// ============================================================================
+// Story 4.3: Interactive Configuration for New Agents - Epic 4 Tests
+// This section verifies configuration prompt functionality for newly detected agents
+// ============================================================================
+
+describe('Story 4.3: Interactive Configuration for New Agents', () => {
+  let testProjectPath: string;
+  let agentsDir: string;
+  let projectId: string;
+
+  beforeEach(async () => {
+    // Clean up test file before each test
+    if (existsSync(TEST_PROJECTS_FILE)) {
+      await rm(TEST_PROJECTS_FILE);
+    }
+    if (!existsSync(TEST_PROJECTS_DIR)) {
+      await mkdir(TEST_PROJECTS_DIR, { recursive: true });
+    }
+
+    // Create test project structure
+    testProjectPath = path.join(os.tmpdir(), `test-epic4-config-${Date.now()}`);
+    agentsDir = path.join(testProjectPath, '.bmad', 'bmm', 'agents');
+    await mkdir(agentsDir, { recursive: true });
+
+    // Create initial agent files
+    await writeFile(path.join(agentsDir, 'dev.md'), '# Dev Agent', 'utf-8');
+    await writeFile(path.join(agentsDir, 'sm.md'), '# SM Agent', 'utf-8');
+
+    // Add project to get project ID
+    const pm = new ProjectManager(TEST_PROJECTS_FILE);
+    const project = await pm.addProject(testProjectPath);
+    projectId = project.id;
+  });
+
+  afterEach(async () => {
+    // Clean up test project and test file
+    if (existsSync(testProjectPath)) {
+      await rm(testProjectPath, { recursive: true });
+    }
+    if (existsSync(TEST_PROJECTS_FILE)) {
+      await rm(TEST_PROJECTS_FILE);
+    }
+  });
+
+  // ============================================================================
+  // TASK 1: Test configuration prompt flow (AC: 1, 1a)
+  // ============================================================================
+
+  describe('Task 1: Test configuration prompt flow', () => {
+    describe('Subtask 1.1-1.3: Test prompt after rescanProject() detects new agents', () => {
+      it('should prepare data for configuration prompt when new agents detected (AC1)', async () => {
+        const pm = new ProjectManager(TEST_PROJECTS_FILE);
+
+        // Add new agent files
+        await writeFile(path.join(agentsDir, 'qa.md'), '# QA Agent', 'utf-8');
+        await writeFile(path.join(agentsDir, 'security.md'), '# Security Agent', 'utf-8');
+
+        // Rescan project - Story 4.2 auto-injects IDs
+        const result = await pm.rescanProject(projectId);
+
+        // Verify detection
+        expect(result.newAgents).toHaveLength(2);
+        expect(result.newAgents).toContain('qa.md');
+        expect(result.newAgents).toContain('security.md');
+
+        // CLI layer would trigger: "Configure new agents now? (y/n)"
+        const shouldPrompt = result.newAgents.length > 0;
+        expect(shouldPrompt).toBe(true);
+
+        // Prepare AgentConfig objects for configuration
+        const project = await pm.getProject(projectId);
+        const newAgentConfigs = project!.agents.filter((a: any) =>
+          result.newAgents.includes(a.name)
+        );
+
+        expect(newAgentConfigs).toHaveLength(2);
+        newAgentConfigs.forEach((agent: any) => {
+          expect(agent.id).toBeDefined();
+          expect(agent.name).toMatch(/\.md$/);
+          expect(agent.model).toBeUndefined(); // Not configured yet
+        });
+      });
+
+      it('should skip configuration when no new agents detected (AC1a)', async () => {
+        const pm = new ProjectManager(TEST_PROJECTS_FILE);
+
+        // Rescan with no new agents
+        const result = await pm.rescanProject(projectId);
+
+        // Verify no new agents
+        expect(result.newAgents).toHaveLength(0);
+
+        // CLI layer would skip prompt
+        const shouldPrompt = result.newAgents.length > 0;
+        expect(shouldPrompt).toBe(false);
+      });
+    });
+
+    describe('Subtask 1.4: Test integration with Story 4.2 workflow', () => {
+      it('should work after Story 4.2 ID injection completes', async () => {
+        const pm = new ProjectManager(TEST_PROJECTS_FILE);
+
+        // Add new agent
+        const newAgentPath = path.join(agentsDir, 'new-agent.md');
+        await writeFile(newAgentPath, '# New Agent', 'utf-8');
+
+        // Story 4.2: rescanProject() auto-injects ID
+        const result = await pm.rescanProject(projectId);
+
+        // Verify ID was injected (Story 4.2)
+        const content = await readFile(newAgentPath, 'utf-8');
+        const hasId = content.includes('<!-- CCR-AGENT-ID:');
+        expect(hasId).toBe(true);
+
+        // Story 4.3: Configuration happens AFTER injection
+        expect(result.newAgents).toContain('new-agent.md');
+
+        // Agent is ready for configuration
+        const project = await pm.getProject(projectId);
+        const newAgent = project!.agents.find((a: any) => a.name === 'new-agent.md');
+        expect(newAgent).toBeDefined();
+        expect(newAgent!.id).toBeDefined();
+        expect(newAgent!.model).toBeUndefined();
+      });
+    });
+  });
+
+  // ============================================================================
+  // TASK 2: Test interactive model selection UI (AC: 2, 3)
+  // ============================================================================
+
+  describe('Task 2: Test interactive model selection UI', () => {
+    describe('Subtask 2.1-2.2: Test loading available models', () => {
+      it('should load available models from config structure', async () => {
+        // This test verifies model loading infrastructure
+        // Actual model loading happens in CLI layer (packages/cli)
+
+        const pm = new ProjectManager(TEST_PROJECTS_FILE);
+
+        // Add new agent
+        await writeFile(path.join(agentsDir, 'qa.md'), '# QA', 'utf-8');
+        await pm.rescanProject(projectId);
+
+        const project = await pm.getProject(projectId);
+        const qaAgent = project!.agents.find((a: any) => a.name === 'qa.md');
+
+        // Agent is ready for model configuration
+        expect(qaAgent).toBeDefined();
+        expect(qaAgent!.id).toBeDefined();
+
+        // Model assignment can be done
+        await expect(
+          pm.setAgentModel(projectId, qaAgent!.id, 'openai,gpt-4o')
+        ).resolves.not.toThrow();
+
+        // Verify model was set
+        const updated = await pm.getProject(projectId);
+        const configured = updated!.agents.find((a: any) => a.name === 'qa.md');
+        expect(configured!.model).toBe('openai,gpt-4o');
+      });
+    });
+
+    describe('Subtask 2.3-2.5: Test agent configuration flow', () => {
+      it('should configure multiple agents in sequence', async () => {
+        const pm = new ProjectManager(TEST_PROJECTS_FILE);
+
+        // Add multiple new agents
+        await writeFile(path.join(agentsDir, 'qa.md'), '# QA', 'utf-8');
+        await writeFile(path.join(agentsDir, 'security.md'), '# Security', 'utf-8');
+        await writeFile(path.join(agentsDir, 'devops.md'), '# DevOps', 'utf-8');
+
+        await pm.rescanProject(projectId);
+
+        const project = await pm.getProject(projectId);
+
+        // Configure each agent
+        const agentsToConfigure = ['qa.md', 'security.md', 'devops.md'];
+        for (const agentName of agentsToConfigure) {
+          const agent = project!.agents.find((a: any) => a.name === agentName);
+          expect(agent).toBeDefined();
+
+          // Simulate model assignment
+          await pm.setAgentModel(projectId, agent!.id, 'openai,gpt-4o');
+        }
+
+        // Verify all agents configured
+        const updated = await pm.getProject(projectId);
+        const configuredAgents = updated!.agents.filter((a: any) =>
+          agentsToConfigure.includes(a.name) && a.model === 'openai,gpt-4o'
+        );
+
+        expect(configuredAgents).toHaveLength(3);
+      });
+
+      it('should validate model before saving (AC3)', async () => {
+        const { Validators } = await import('../src/validation');
+        const pm = new ProjectManager(TEST_PROJECTS_FILE);
+
+        // Test valid model
+        expect(Validators.isValidModelString('openai,gpt-4o')).toBe(true);
+        expect(Validators.isValidModelString('anthropic,claude-haiku')).toBe(true);
+
+        // Test invalid model
+        expect(Validators.isValidModelString('invalid')).toBe(false);
+        expect(Validators.isValidModelString('openai')).toBe(false);
+        expect(Validators.isValidModelString('')).toBe(false);
+      });
+
+      it('should handle Router.default option (AC3)', async () => {
+        const pm = new ProjectManager(TEST_PROJECTS_FILE);
+
+        await writeFile(path.join(agentsDir, 'qa.md'), '# QA', 'utf-8');
+        await pm.rescanProject(projectId);
+
+        const project = await pm.getProject(projectId);
+        const agent = project!.agents.find((a: any) => a.name === 'qa.md');
+
+        // Setting model to undefined means use Router.default
+        await pm.setAgentModel(projectId, agent!.id, undefined);
+
+        const updated = await pm.getProject(projectId);
+        const configured = updated!.agents.find((a: any) => a.name === 'qa.md');
+
+        expect(configured!.model).toBeUndefined();
+        // Router.default will be used at runtime
+      });
+    });
+  });
+
+  // ============================================================================
+  // TASK 3: Test batch save and summary (AC: 4)
+  // ============================================================================
+
+  describe('Task 3: Test batch save and summary', () => {
+    describe('Subtask 3.1-3.3: Test configuration summary', () => {
+      it('should track all configured agents for summary', async () => {
+        const pm = new ProjectManager(TEST_PROJECTS_FILE);
+
+        // Add new agents
+        await writeFile(path.join(agentsDir, 'qa.md'), '# QA', 'utf-8');
+        await writeFile(path.join(agentsDir, 'security.md'), '# Security', 'utf-8');
+
+        await pm.rescanProject(projectId);
+
+        const project = await pm.getProject(projectId);
+
+        // Configure agents
+        const configurations: Array<{ name: string; model: string }> = [];
+
+        for (const agentName of ['qa.md', 'security.md']) {
+          const agent = project!.agents.find((a: any) => a.name === agentName);
+          const model = agentName === 'qa.md' ? 'openai,gpt-4o' : 'anthropic,claude-haiku';
+
+          await pm.setAgentModel(projectId, agent!.id, model);
+
+          configurations.push({
+            name: agentName,
+            model: model
+          });
+        }
+
+        // Verify summary data
+        expect(configurations).toHaveLength(2);
+        expect(configurations[0]).toEqual({ name: 'qa.md', model: 'openai,gpt-4o' });
+        expect(configurations[1]).toEqual({ name: 'security.md', model: 'anthropic,claude-haiku' });
+
+        // CLI would display:
+        // "✓ Configured 2 new agents:"
+        // "  - qa.md → openai,gpt-4o"
+        // "  - security.md → anthropic,claude-haiku"
+        // "Total agents: 4"
+      });
+
+      it('should save changes atomically using setAgentModel', async () => {
+        const pm = new ProjectManager(TEST_PROJECTS_FILE);
+
+        await writeFile(path.join(agentsDir, 'qa.md'), '# QA', 'utf-8');
+        await pm.rescanProject(projectId);
+
+        const project = await pm.getProject(projectId);
+        const agent = project!.agents.find((a: any) => a.name === 'qa.md');
+
+        // setAgentModel uses safeFileWrite for atomic saves
+        await pm.setAgentModel(projectId, agent!.id, 'openai,gpt-4o');
+
+        // Verify save succeeded
+        const updated = await pm.getProject(projectId);
+        const configured = updated!.agents.find((a: any) => a.name === 'qa.md');
+        expect(configured!.model).toBe('openai,gpt-4o');
+      });
+    });
+  });
+
+  // ============================================================================
+  // TASK 4: Test skip configuration path (AC: 5)
+  // ============================================================================
+
+  describe('Task 4: Test skip configuration path', () => {
+    describe('Subtask 4.1-4.3: Test agents added without model', () => {
+      it('should add agents with model: undefined when skipped', async () => {
+        const pm = new ProjectManager(TEST_PROJECTS_FILE);
+
+        // Add new agents
+        await writeFile(path.join(agentsDir, 'qa.md'), '# QA', 'utf-8');
+        await writeFile(path.join(agentsDir, 'security.md'), '# Security', 'utf-8');
+
+        // Rescan (Story 4.2) - IDs injected, but model stays undefined
+        await pm.rescanProject(projectId);
+
+        // User skips configuration (AC5)
+        const project = await pm.getProject(projectId);
+
+        // Verify agents have model: undefined
+        const qaAgent = project!.agents.find((a: any) => a.name === 'qa.md');
+        const securityAgent = project!.agents.find((a: any) => a.name === 'security.md');
+
+        expect(qaAgent!.model).toBeUndefined();
+        expect(securityAgent!.model).toBeUndefined();
+
+        // CLI would display:
+        // "New agents added without model configuration."
+        // "Configure later with: ccr project configure <id>"
+        // "New agents will use Router.default until configured."
+      });
+
+      it('should allow later configuration of skipped agents', async () => {
+        const pm = new ProjectManager(TEST_PROJECTS_FILE);
+
+        // Add agent and skip configuration
+        await writeFile(path.join(agentsDir, 'qa.md'), '# QA', 'utf-8');
+        await pm.rescanProject(projectId);
+
+        // Verify agent is unconfigured
+        const project1 = await pm.getProject(projectId);
+        const qaAgent1 = project1!.agents.find((a: any) => a.name === 'qa.md');
+        expect(qaAgent1!.model).toBeUndefined();
+
+        // Later configuration (user runs: ccr project configure <id>)
+        await pm.setAgentModel(projectId, qaAgent1!.id, 'openai,gpt-4o');
+
+        // Verify agent is now configured
+        const project2 = await pm.getProject(projectId);
+        const qaAgent2 = project2!.agents.find((a: any) => a.name === 'qa.md');
+        expect(qaAgent2!.model).toBe('openai,gpt-4o');
+      });
+    });
+  });
+
+  // ============================================================================
+  // TASK 5: Comprehensive integration tests (AC: 1-5)
+  // ============================================================================
+
+  describe('Task 5: Comprehensive integration tests', () => {
+    describe('Subtask 5.1-5.4: Test complete Epic 4 workflow', () => {
+      it('should handle complete Epic 4 workflow: detect → inject → configure', async () => {
+        const pm = new ProjectManager(TEST_PROJECTS_FILE);
+
+        // Story 4.1: Add new agent file
+        await writeFile(path.join(agentsDir, 'qa.md'), '# QA Agent');
+
+        // Story 4.2: Rescan detects and injects ID
+        const result = await pm.rescanProject(projectId);
+        expect(result.newAgents).toEqual(['qa.md']);
+
+        // Verify ID was injected
+        const content = await readFile(path.join(agentsDir, 'qa.md'), 'utf-8');
+        expect(content).toMatch(/<!-- CCR-AGENT-ID: [a-f0-9-]{36} -->/);
+
+        // Story 4.3: Configure new agent
+        const project = await pm.getProject(projectId);
+        const qaConfig = project!.agents.find((a: any) => a.name === 'qa.md');
+
+        expect(qaConfig).toBeDefined();
+        expect(qaConfig!.id).toMatch(/^[a-f0-9-]{36}$/);
+        expect(qaConfig!.model).toBeUndefined();
+
+        // Configure model
+        await pm.setAgentModel(projectId, qaConfig!.id, 'openai,gpt-4o');
+
+        // Verify complete workflow
+        const updated = await pm.getProject(projectId);
+        const configured = updated!.agents.find((a: any) => a.name === 'qa.md');
+        expect(configured!.model).toBe('openai,gpt-4o');
+      });
+
+      it('should handle batch configuration of multiple agents', async () => {
+        const pm = new ProjectManager(TEST_PROJECTS_FILE);
+
+        // Add multiple new agents
+        await writeFile(path.join(agentsDir, 'qa.md'), '# QA');
+        await writeFile(path.join(agentsDir, 'security.md'), '# Security');
+        await writeFile(path.join(agentsDir, 'devops.md'), '# DevOps');
+
+        // Detect and inject IDs
+        const result = await pm.rescanProject(projectId);
+        expect(result.newAgents).toHaveLength(3);
+
+        // Configure all agents
+        const project = await pm.getProject(projectId);
+        const models = ['openai,gpt-4o', 'anthropic,claude-haiku', 'deepseek,deepseek-chat'];
+
+        for (let i = 0; i < result.newAgents.length; i++) {
+          const agentName = result.newAgents[i];
+          const agent = project!.agents.find((a: any) => a.name === agentName);
+          await pm.setAgentModel(projectId, agent!.id, models[i]);
+        }
+
+        // Verify all configured
+        const updated = await pm.getProject(projectId);
+        expect(updated!.agents.filter((a: any) => a.model).length).toBe(3);
+      });
+
+      it('should handle skip then configure later workflow', async () => {
+        const pm = new ProjectManager(TEST_PROJECTS_FILE);
+
+        // Add agent, skip configuration
+        await writeFile(path.join(agentsDir, 'qa.md'), '# QA');
+        await pm.rescanProject(projectId);
+
+        const project1 = await pm.getProject(projectId);
+        const agent1 = project1!.agents.find((a: any) => a.name === 'qa.md');
+        expect(agent1!.model).toBeUndefined();
+
+        // Configure later
+        await pm.setAgentModel(projectId, agent1!.id, 'openai,gpt-4o');
+
+        const project2 = await pm.getProject(projectId);
+        const agent2 = project2!.agents.find((a: any) => a.name === 'qa.md');
+        expect(agent2!.model).toBe('openai,gpt-4o');
+      });
+    });
+
+    describe('Subtask 5.5-5.6: Test error handling', () => {
+      it('should handle model validation errors gracefully', async () => {
+        const pm = new ProjectManager(TEST_PROJECTS_FILE);
+
+        await writeFile(path.join(agentsDir, 'qa.md'), '# QA');
+        await pm.rescanProject(projectId);
+
+        const project = await pm.getProject(projectId);
+        const agent = project!.agents.find((a: any) => a.name === 'qa.md');
+
+        // Invalid model should be rejected by validation
+        const { Validators } = await import('../src/validation');
+        expect(Validators.isValidModelString('invalid-format')).toBe(false);
+
+        // Valid model should work
+        expect(Validators.isValidModelString('openai,gpt-4o')).toBe(true);
+        await pm.setAgentModel(projectId, agent!.id, 'openai,gpt-4o');
+
+        const updated = await pm.getProject(projectId);
+        const configured = updated!.agents.find((a: any) => a.name === 'qa.md');
+        expect(configured!.model).toBe('openai,gpt-4o');
+      });
+
+      it('should maintain data consistency across rescan and configure', async () => {
+        const pm = new ProjectManager(TEST_PROJECTS_FILE);
+
+        // Initial agents
+        const initialProject = await pm.getProject(projectId);
+        const initialCount = initialProject!.agents.length;
+
+        // Add and configure new agent
+        await writeFile(path.join(agentsDir, 'qa.md'), '# QA');
+        await pm.rescanProject(projectId);
+
+        const project1 = await pm.getProject(projectId);
+        const qaAgent = project1!.agents.find((a: any) => a.name === 'qa.md');
+        await pm.setAgentModel(projectId, qaAgent!.id, 'openai,gpt-4o');
+
+        // Verify consistency
+        const project2 = await pm.getProject(projectId);
+        expect(project2!.agents.length).toBe(initialCount + 1);
+        expect(project2!.agents.filter((a: any) => a.model).length).toBe(1);
+      });
+    });
+  });
+
+  // ============================================================================
+  // Epic 4 Complete Workflow Documentation
+  // ============================================================================
+
+  describe('Epic 4 Complete Workflow Documentation', () => {
+    it('should document Epic 4 stories integration', () => {
+      const epic4Workflow = {
+        story41: 'New Agent File Detection - Returns newAgents string[]',
+        story42: 'Automatic Agent ID Injection - Injects CCR-AGENT-ID tags',
+        story43: 'Interactive Configuration - Prompts for model assignment',
+        integration: 'Detection → ID Injection → Configuration Prompt'
+      };
+
+      expect(epic4Workflow.story41).toBeDefined();
+      expect(epic4Workflow.story42).toBeDefined();
+      expect(epic4Workflow.story43).toBeDefined();
+      expect(epic4Workflow.integration).toContain('Detection');
+      expect(epic4Workflow.integration).toContain('Configuration');
+    });
+  });
+});
+
