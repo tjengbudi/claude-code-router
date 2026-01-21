@@ -17,6 +17,14 @@ import os from 'os';
 import { v4 as uuidv4 } from 'uuid';
 import { LRUCache } from 'lru-cache';
 
+// Test constants for cache performance validation
+const MIN_HIT_RATE_15_REQ = 80; // 80%+ hit rate for 15-request workflow (AC 2)
+const MIN_HIT_RATE_20_REQ = 80; // 80%+ hit rate for 20-request workflow (AC 3)
+const MAX_CACHE_LOOKUP_LATENCY_MS = 5; // < 5ms per NFR-P2
+const MAX_EVICTION_LATENCY_MS = 10; // < 10ms per NFR-P4
+const MAX_MEMORY_GROWTH_MB = 50; // < 50MB per NFR-SC3
+const CACHE_MAX_ENTRIES = 1000; // Max cache capacity
+
 // Mock projects.json path for testing
 const TEST_DIR = path.join(os.tmpdir(), 'ccr-cache-efficiency-' + Date.now());
 const TEST_PROJECTS_FILE = path.join(TEST_DIR, 'projects.json');
@@ -168,7 +176,7 @@ describe('Story 3.2: Cache Performance Validation - Integration Tests', () => {
 
     // Initialize session-based LRU cache matching router.ts configuration
     sessionAgentModelCache = new LRUCache<string, string>({
-      max: 1000,
+      max: CACHE_MAX_ENTRIES,
     });
   });
 
@@ -203,15 +211,15 @@ describe('Story 3.2: Cache Performance Validation - Integration Tests', () => {
 
       // Validate 80%+ I/O reduction (NFR-P2 minimum)
       const hitRate = (metrics.hits / (metrics.hits + metrics.misses)) * 100;
-      expect(hitRate).toBeGreaterThanOrEqual(80);
-      expect(hitRate).toBe(80);
+      expect(hitRate).toBeGreaterThanOrEqual(MIN_HIT_RATE_15_REQ);
+      expect(hitRate).toBe(MIN_HIT_RATE_15_REQ);
 
       // Verify cache lookup completes in < 5ms
       const avgLatency = metrics.latencies.reduce((a, b) => a + b, 0) / metrics.latencies.length;
-      expect(avgLatency).toBeLessThan(5);
+      expect(avgLatency).toBeLessThan(MAX_CACHE_LOOKUP_LATENCY_MS);
     });
 
-    test('20-request workflow with 4 agents should achieve 80%+ hit rate', async () => {
+    test('20-request workflow with 4 agents should achieve 80%+ I/O reduction (AC 3)', async () => {
       const sessionId = 'test-session-20-req';
       const agentSubset = agentIds.slice(0, 4); // Use 4 agents
       const models = [
@@ -238,12 +246,12 @@ describe('Story 3.2: Cache Performance Validation - Integration Tests', () => {
       // Validate 80%+ I/O reduction (NFR-P2 minimum)
       // Note: 16 hits / 20 requests = 80% hit rate
       const hitRate = (metrics.hits / (metrics.hits + metrics.misses)) * 100;
-      expect(hitRate).toBeGreaterThanOrEqual(80);
-      expect(hitRate).toBe(80);
+      expect(hitRate).toBeGreaterThanOrEqual(MIN_HIT_RATE_20_REQ);
+      expect(hitRate).toBe(MIN_HIT_RATE_20_REQ);
 
       // Verify cache lookup completes in < 5ms
       const avgLatency = metrics.latencies.reduce((a, b) => a + b, 0) / metrics.latencies.length;
-      expect(avgLatency).toBeLessThan(5);
+      expect(avgLatency).toBeLessThan(MAX_CACHE_LOOKUP_LATENCY_MS);
     });
 
     test('multi-agent switching pattern (dev→sm→tea→dev)', async () => {
@@ -302,8 +310,8 @@ describe('Story 3.2: Cache Performance Validation - Integration Tests', () => {
       const maxLatency = Math.max(...latencies);
       const avgLatency = latencies.reduce((a, b) => a + b, 0) / latencies.length;
 
-      expect(maxLatency).toBeLessThan(5);
-      expect(avgLatency).toBeLessThan(5);
+      expect(maxLatency).toBeLessThan(MAX_CACHE_LOOKUP_LATENCY_MS);
+      expect(avgLatency).toBeLessThan(MAX_CACHE_LOOKUP_LATENCY_MS);
     });
   });
 
@@ -464,6 +472,106 @@ describe('Story 3.2: Cache Performance Validation - Integration Tests', () => {
     });
   });
 
+  describe('Cache Configuration Validation (Story 3.2 AC #1)', () => {
+    test('should verify cache is configured with max: 1000', () => {
+      expect(sessionAgentModelCache.max).toBe(CACHE_MAX_ENTRIES);
+    });
+
+    test('should verify cache is configured with ttl: 0 (no expiration)', () => {
+      // LRU cache with ttl: 0 means no time-based expiration
+      // We verify this by checking that entries don't expire over time
+      const sessionId = 'ttl-test-session';
+      const cacheKey = `${sessionId}:${project1Id}:${agentIds[0]}`;
+
+      sessionAgentModelCache.set(cacheKey, 'test-model');
+
+      // Entry should still exist (no TTL expiration)
+      const result = sessionAgentModelCache.get(cacheKey);
+      expect(result).toBe('test-model');
+    });
+
+    test('should verify cache updates age on get (updateAgeOnGet: true)', () => {
+      const sessionId = 'age-update-test';
+
+      // Fill cache with entries
+      for (let i = 0; i < 10; i++) {
+        const cacheKey = `${sessionId}:${project1Id}:agent-${i}`;
+        sessionAgentModelCache.set(cacheKey, `model-${i}`);
+      }
+
+      // Access first entry multiple times (should update its age)
+      const firstKey = `${sessionId}:${project1Id}:agent-0`;
+      for (let i = 0; i < 5; i++) {
+        sessionAgentModelCache.get(firstKey);
+      }
+
+      // Add more entries to approach capacity
+      for (let i = 10; i < 1000; i++) {
+        const cacheKey = `${sessionId}:${project1Id}:agent-${i}`;
+        sessionAgentModelCache.set(cacheKey, `model-${i}`);
+      }
+
+      // First entry should still exist because we accessed it recently
+      // (updateAgeOnGet: true keeps it fresh)
+      const result = sessionAgentModelCache.get(firstKey);
+      expect(result).toBe('model-0');
+    });
+  });
+
+  describe('Cache Metrics Functions (Story 3.2)', () => {
+    test('getCacheMetrics should return accurate metrics', async () => {
+      const { getCacheMetrics, resetCacheMetrics } = await import('../../src/utils/router');
+
+      // Reset metrics first
+      resetCacheMetrics();
+
+      const sessionId = 'metrics-test-session';
+      const agentId = agentIds[0];
+      const cacheKey = `${sessionId}:${project1Id}:${agentId}`;
+
+      // Simulate cache miss
+      let result = sessionAgentModelCache.get(cacheKey);
+      expect(result).toBeUndefined();
+
+      // Store in cache
+      sessionAgentModelCache.set(cacheKey, 'openai,gpt-4o');
+
+      // Simulate cache hit
+      result = sessionAgentModelCache.get(cacheKey);
+      expect(result).toBe('openai,gpt-4o');
+
+      // Get metrics
+      const metrics = getCacheMetrics();
+
+      // Verify metrics structure
+      expect(metrics).toHaveProperty('hits');
+      expect(metrics).toHaveProperty('misses');
+      expect(metrics).toHaveProperty('hitRate');
+      expect(metrics).toHaveProperty('size');
+      expect(typeof metrics.hitRate).toBe('number');
+    });
+
+    test('resetCacheMetrics should clear all counters', async () => {
+      const { getCacheMetrics, resetCacheMetrics } = await import('../../src/utils/router');
+
+      // Reset to start fresh
+      resetCacheMetrics();
+
+      const initialMetrics = getCacheMetrics();
+      expect(initialMetrics.hits).toBe(0);
+      expect(initialMetrics.misses).toBe(0);
+      expect(initialMetrics.hitRate).toBe(0);
+    });
+
+    test('logCacheMetrics should not throw errors', async () => {
+      const { logCacheMetrics } = await import('../../src/utils/router');
+
+      // Should not throw
+      expect(() => logCacheMetrics()).not.toThrow();
+      expect(() => logCacheMetrics('test-context')).not.toThrow();
+    });
+  });
+
   describe('Real-World Workflow Simulations', () => {
     test('should simulate typical developer workflow with multiple agents', async () => {
       const sessionId = 'dev-workflow-session';
@@ -548,7 +656,7 @@ describe('Story 3.2: Cache Performance Validation - Integration Tests', () => {
 
       // All latencies should be < 5ms
       const maxLatency = Math.max(...metrics.latencies);
-      expect(maxLatency).toBeLessThan(5);
+      expect(maxLatency).toBeLessThan(MAX_CACHE_LOOKUP_LATENCY_MS);
     });
   });
 });

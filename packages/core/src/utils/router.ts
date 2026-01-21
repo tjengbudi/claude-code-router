@@ -231,12 +231,16 @@ const getUseModel = async (
           const cacheKey = `${sessionId}:${projectId}:${agentId}`;
 
           // Story 3.1: Check cache first (90%+ hit rate target per NFR-P2)
-          const cachedModel = sessionAgentModelCache.get(cacheKey);
-          if (cachedModel) {
-            // Story 3.2: Track cache hit metric
-            cacheMetrics.hits++;
-            req.log.debug({ cacheKey, model: cachedModel }, 'Agent model cache hit');
-            return { model: cachedModel, scenarioType: 'default' };
+          try {
+            const cachedModel = sessionAgentModelCache.get(cacheKey);
+            if (cachedModel) {
+              // Story 3.2: Track cache hit metric
+              cacheMetrics.hits++;
+              req.log.debug({ cacheKey, model: cachedModel }, 'Agent model cache hit');
+              return { model: cachedModel, scenarioType: 'default' };
+            }
+          } catch (cacheError) {
+            req.log.warn({ error: (cacheError as Error).message, cacheKey }, 'Cache get operation failed, continuing without cache');
           }
 
           // Story 3.1: Cache miss - lookup with project context
@@ -245,8 +249,12 @@ const getUseModel = async (
             // Story 3.1: Store result in cache for subsequent requests
             // Story 3.2: Track cache miss metric
             cacheMetrics.misses++;
-            sessionAgentModelCache.set(cacheKey, agentModel);
-            req.log.debug({ cacheKey, model: agentModel }, 'Agent model cache miss, stored');
+            try {
+              sessionAgentModelCache.set(cacheKey, agentModel);
+              req.log.debug({ cacheKey, model: agentModel }, 'Agent model cache miss, stored');
+            } catch (cacheError) {
+              req.log.warn({ error: (cacheError as Error).message, cacheKey }, 'Cache set operation failed, continuing without caching');
+            }
             return { model: agentModel, scenarioType: 'default' };
           }
 
@@ -419,8 +427,11 @@ const sessionProjectCache = new LRUCache<string, string>({
 // Story 3.1: Session-based LRU cache for agent model lookups
 // Cache key: ${sessionId}:${projectId}:${agentId}
 // Enables multi-project cache isolation and 90%+ hit rate (NFR-P2)
+// Story 3.2: Cache configuration per AC #1 - max: 1000, ttl: 0, updateAgeOnGet: true
 const sessionAgentModelCache = new LRUCache<string, string>({
   max: 1000,
+  ttl: 0, // No expiration - cache entries never expire based on time
+  updateAgeOnGet: true, // Update LRU position on cache hits for optimal eviction
 });
 
 // Story 3.2: Cache metrics for monitoring and validation
