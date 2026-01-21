@@ -46,6 +46,26 @@ export const API_KEY_PATTERNS = [
 // Used for forward/backward compatibility when loading projects.json from git
 export const PROJECTS_SCHEMA_VERSION = '1.0.0';
 
+// Retry configuration for automatic LLM API request retry (Story 3.4)
+// NFR-R2: Automatic retry 3x with exponential backoff for transient API errors
+export const RETRY_CONFIG = {
+  maxAttempts: 3,
+  backoffMs: [1000, 2000, 4000], // 1s, 2s, 4s - exponential backoff
+  retryableErrors: [
+    // Network errors
+    'ECONNRESET',      // Connection reset by peer
+    'ETIMEDOUT',       // Request timeout
+    'ECONNREFUSED',    // Connection refused
+    // API errors
+    'rate_limit_exceeded', // API rate limit
+    // HTTP status codes (as strings)
+    '429',             // Too Many Requests
+    '500',             // Internal Server Error
+    '502',             // Bad Gateway
+    '503',             // Service Unavailable
+    '504',             // Gateway Timeout
+  ],
+} as const;
 
 export interface DefaultConfig {
   LOG: boolean;

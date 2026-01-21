@@ -12,6 +12,7 @@ import { ConfigService } from "@/services/config";
 import { ProviderService } from "@/services/provider";
 import { TransformerService } from "@/services/transformer";
 import { Transformer } from "@/types/transformer";
+import { withRetry } from "@/utils/retry";
 
 // Extend FastifyInstance to include custom services
 declare module "fastify" {
@@ -189,7 +190,7 @@ async function handleFallback(
     }
   }
 
-  req.log.error(`All fallback models failed for yichu ${scenarioType}`);
+  req.log.error(`All fallback models failed for scenario ${scenarioType}`);
   return null;
 }
 
@@ -350,30 +351,45 @@ async function sendRequestToProvider(
     }
   }
 
-  const response = await sendUnifiedRequest(
-    url,
-    requestBody,
-    {
-      httpsProxy: fastify.configService.getHttpsProxy(),
-      ...config,
-      headers: JSON.parse(JSON.stringify(requestHeaders)),
-    },
-    context,
-    fastify.log
-  );
+  // ============ START: Retry Mechanism Integration (Story 3.4) ============
+  // Wrap LLM API request with automatic retry for transient errors
+  // NFR-R2: Automatic retry 3x with exponential backoff (1s, 2s, 4s)
+  const response = await withRetry(
+    async () => {
+      const res = await sendUnifiedRequest(
+        url,
+        requestBody,
+        {
+          httpsProxy: fastify.configService.getHttpsProxy(),
+          ...config,
+          headers: JSON.parse(JSON.stringify(requestHeaders)),
+        },
+        context,
+        fastify.log
+      );
 
-  // Handle request errors
-  if (!response.ok) {
-    const errorText = await response.text();
-    fastify.log.error(
-      `[provider_response_error] Error from provider(${provider.name},${requestBody.model}: ${response.status}): ${errorText}`,
-    );
-    throw createApiError(
-      `Error from provider(${provider.name},${requestBody.model}: ${response.status}): ${errorText}`,
-      response.status,
-      "provider_response_error"
-    );
-  }
+      // Check response status and throw error if not OK
+      // This allows retry mechanism to catch HTTP errors (500, 502, 503, 504)
+      if (!res.ok) {
+        const errorText = await res.text();
+        fastify.log.error(
+          `[provider_response_error] Error from provider(${provider.name},${requestBody.model}: ${res.status}): ${errorText}`,
+        );
+        const error: any = createApiError(
+          `Error from provider(${provider.name},${requestBody.model}: ${res.status}): ${errorText}`,
+          res.status,
+          "provider_response_error"
+        );
+        // Add status to error object for retry detection
+        error.status = res.status;
+        throw error;
+      }
+
+      return res;
+    },
+    `LLM API request to ${provider.name},${requestBody.model}`
+  );
+  // ============ END: Retry Mechanism Integration ============
 
   return response;
 }
