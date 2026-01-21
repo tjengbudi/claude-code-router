@@ -190,7 +190,12 @@ describe('Story 3.2: Cache Performance Validation - Integration Tests', () => {
   });
 
   describe('AC 2, 3: Multi-Request Workflow Cache Efficiency', () => {
+    // Priority: P0
     test('3.2-AC2-001: 15-request workflow with 3 agents should achieve 80%+ hit rate', async () => {
+      // Given: 15-request workflow with 3 agents cycling through requests
+      // When: Simulating realistic multi-agent workflow
+      // Then: Should achieve 80%+ cache hit rate (12 hits, 3 misses)
+
       const sessionId = 'test-session-15-req';
       const agentSubset = agentIds.slice(0, 3); // Use 3 agents
       const models = ['openai,gpt-4o', 'anthropic,claude-opus', 'google,gemini-pro'];
@@ -219,7 +224,12 @@ describe('Story 3.2: Cache Performance Validation - Integration Tests', () => {
       expect(avgLatency).toBeLessThan(MAX_CACHE_LOOKUP_LATENCY_MS);
     });
 
+    // Priority: P0
     test('3.2-AC3-001: 20-request workflow with 4 agents should achieve 80%+ I/O reduction (AC 3)', async () => {
+      // Given: 20-request workflow with 4 agents cycling through requests
+      // When: Simulating extended multi-agent workflow
+      // Then: Should achieve 80%+ cache hit rate (16 hits, 4 misses)
+
       const sessionId = 'test-session-20-req';
       const agentSubset = agentIds.slice(0, 4); // Use 4 agents
       const models = [
@@ -254,7 +264,12 @@ describe('Story 3.2: Cache Performance Validation - Integration Tests', () => {
       expect(avgLatency).toBeLessThan(MAX_CACHE_LOOKUP_LATENCY_MS);
     });
 
+    // Priority: P1
     test('3.2-AC3-002: multi-agent switching pattern (dev→sm→tea→dev)', async () => {
+      // Given: Repeating pattern of 3 agents (dev→sm→tea) over 12 requests
+      // When: Simulating typical agent switching workflow
+      // Then: Should achieve 75%+ hit rate (3 misses first cycle, 9 hits after)
+
       const sessionId = 'test-session-switching';
       const agents = [agentIds[0], agentIds[1], agentIds[2]]; // dev, sm, tea
       const models = ['openai,gpt-4o', 'anthropic,claude-sonnet', 'google,gemini-flash'];
@@ -289,7 +304,12 @@ describe('Story 3.2: Cache Performance Validation - Integration Tests', () => {
       expect(hitRate).toBeGreaterThanOrEqual(75); // 9/12 = 75%
     });
 
+    // Priority: P1
     test('3.2-AC4-001: should validate cache lookup latency < 5ms for all operations', async () => {
+      // Given: Pre-populated cache with 100 lookup operations
+      // When: Measuring cache lookup latency
+      // Then: All lookups should complete in < 5ms (NFR-P2)
+
       const sessionId = 'test-session-latency';
       const latencies: number[] = [];
 
@@ -316,7 +336,12 @@ describe('Story 3.2: Cache Performance Validation - Integration Tests', () => {
   });
 
   describe('AC 6, 7: Cache Isolation Tests', () => {
+    // Priority: P0
     test('3.2-AC6-001: should isolate cache entries across different sessions (AC 6)', async () => {
+      // Given: Two different sessions accessing same agent
+      // When: Storing different models for each session
+      // Then: Each session should have isolated cache entries
+
       const session1 = 'session-isolation-1';
       const session2 = 'session-isolation-2';
       const agentId = agentIds[0];
@@ -345,7 +370,12 @@ describe('Story 3.2: Cache Performance Validation - Integration Tests', () => {
       expect(sessionAgentModelCache.get(cacheKey2)).toBe('anthropic,claude-opus');
     });
 
+    // Priority: P0
     test('3.2-AC7-001: should isolate cache entries across different projects (AC 7)', async () => {
+      // Given: Same agent name in two different projects
+      // When: Storing different models for each project
+      // Then: Each project should have isolated cache entries
+
       const sessionId = 'session-project-isolation';
       const agentId = agentIds[0];
 
@@ -377,7 +407,12 @@ describe('Story 3.2: Cache Performance Validation - Integration Tests', () => {
       expect(cacheKey1).not.toBe(cacheKey2);
     });
 
+    // Priority: P1
     test('3.2-AC6-002: should handle concurrent sessions accessing same agent without collision', async () => {
+      // Given: 10 concurrent sessions accessing same agent
+      // When: Each session stores different model
+      // Then: All sessions should have isolated cache entries without collision
+
       const agentId = agentIds[0];
       const sessionCount = 10;
       const sessions: string[] = [];
@@ -407,7 +442,12 @@ describe('Story 3.2: Cache Performance Validation - Integration Tests', () => {
       expect(sessionAgentModelCache.size).toBe(sessionCount);
     });
 
+    // Priority: P1
     test('3.2-AC7-002: should handle multiple projects with same agent names', async () => {
+      // Given: Multiple projects potentially with same agent names
+      // When: Storing models for agents in different projects
+      // Then: Each project should have isolated cache entries
+
       const sessionId = 'multi-project-same-names';
 
       // Both projects have agents, potentially with same names
@@ -432,7 +472,12 @@ describe('Story 3.2: Cache Performance Validation - Integration Tests', () => {
   });
 
   describe('Cache Key Format Validation', () => {
+    // Priority: P1
     test('3.2-AC1-001: should use three-component cache key format', async () => {
+      // Given: Session ID, project ID, and agent ID
+      // When: Constructing cache key
+      // Then: Should use format ${sessionId}:${projectId}:${agentId}
+
       const sessionId = 'key-format-test';
       const projectId = project1Id;
       const agentId = agentIds[0];
@@ -447,7 +492,12 @@ describe('Story 3.2: Cache Performance Validation - Integration Tests', () => {
       expect(components[2]).toBe(agentId);
     });
 
+    // Priority: P1
     test('3.2-AC1-002: should differentiate cache keys with same agent in different contexts', async () => {
+      // Given: Same agent ID in different sessions and projects
+      // When: Constructing cache keys for different contexts
+      // Then: All cache keys should be unique and isolated
+
       const agentId = agentIds[0];
 
       const key1 = `session1:${project1Id}:${agentId}`;
@@ -473,11 +523,21 @@ describe('Story 3.2: Cache Performance Validation - Integration Tests', () => {
   });
 
   describe('Cache Configuration Validation (Story 3.2 AC #1)', () => {
+    // Priority: P1
     test('3.2-AC5-001: should verify cache is configured with max: 1000', () => {
+      // Given: LRU cache configuration
+      // When: Checking max entries setting
+      // Then: Should be configured with max 1000 entries
+
       expect(sessionAgentModelCache.max).toBe(CACHE_MAX_ENTRIES);
     });
 
+    // Priority: P2
     test('3.2-AC5-002: should verify cache is configured with ttl: 0 (no expiration)', () => {
+      // Given: LRU cache with no TTL expiration
+      // When: Storing entry and checking persistence
+      // Then: Entry should not expire over time
+
       // LRU cache with ttl: 0 means no time-based expiration
       // We verify this by checking that entries don't expire over time
       const sessionId = 'ttl-test-session';
@@ -490,7 +550,12 @@ describe('Story 3.2: Cache Performance Validation - Integration Tests', () => {
       expect(result).toBe('test-model');
     });
 
+    // Priority: P2
     test('3.2-AC5-003: should verify cache updates age on get (updateAgeOnGet: true)', () => {
+      // Given: Cache with updateAgeOnGet enabled
+      // When: Accessing entry multiple times then filling cache
+      // Then: Frequently accessed entry should remain in cache (LRU behavior)
+
       const sessionId = 'age-update-test';
 
       // Fill cache with entries
@@ -519,7 +584,12 @@ describe('Story 3.2: Cache Performance Validation - Integration Tests', () => {
   });
 
   describe('Cache Metrics Functions (Story 3.2)', () => {
+    // Priority: P2
     test('3.2-AC8-001: getCacheMetrics should return accurate metrics', async () => {
+      // Given: Cache metrics tracking system
+      // When: Getting cache metrics
+      // Then: Should return accurate hits, misses, hitRate, and size
+
       const { getCacheMetrics, resetCacheMetrics } = await import('../../src/utils/router');
 
       // Reset metrics first
@@ -551,7 +621,12 @@ describe('Story 3.2: Cache Performance Validation - Integration Tests', () => {
       expect(typeof metrics.hitRate).toBe('number');
     });
 
+    // Priority: P2
     test('3.2-AC8-002: resetCacheMetrics should clear all counters', async () => {
+      // Given: Cache metrics system
+      // When: Resetting cache metrics
+      // Then: All counters should be cleared to 0
+
       const { getCacheMetrics, resetCacheMetrics } = await import('../../src/utils/router');
 
       // Reset to start fresh
@@ -563,7 +638,12 @@ describe('Story 3.2: Cache Performance Validation - Integration Tests', () => {
       expect(initialMetrics.hitRate).toBe(0);
     });
 
+    // Priority: P2
     test('3.2-AC8-003: logCacheMetrics should not throw errors', async () => {
+      // Given: Cache metrics logging function
+      // When: Calling logCacheMetrics with or without context
+      // Then: Should not throw any errors
+
       const { logCacheMetrics } = await import('../../src/utils/router');
 
       // Should not throw
@@ -573,7 +653,12 @@ describe('Story 3.2: Cache Performance Validation - Integration Tests', () => {
   });
 
   describe('Real-World Workflow Simulations', () => {
+    // Priority: P1
     test('3.2-AC2-002: should simulate typical developer workflow with multiple agents', async () => {
+      // Given: Typical developer workflow pattern (code→review→fix→test→document)
+      // When: Simulating workflow with agent switching
+      // Then: Should achieve >50% hit rate with realistic agent usage
+
       const sessionId = 'dev-workflow-session';
       // Typical workflow: code (dev) → review (sm) → fix (dev) → test (tea) → document (dev)
       const workflowPattern = [
@@ -617,7 +702,12 @@ describe('Story 3.2: Cache Performance Validation - Integration Tests', () => {
       expect(hitRate).toBeGreaterThan(50); // 4/7 ≈ 57%
     });
 
+    // Priority: P1
     test('3.2-AC2-003: should handle burst of requests to same agent', async () => {
+      // Given: Burst of 50 requests to same agent
+      // When: First request misses, subsequent requests hit cache
+      // Then: Should achieve 98%+ hit rate (49/50)
+
       const sessionId = 'burst-test-session';
       const agentId = agentIds[0];
       const burstCount = 50;
