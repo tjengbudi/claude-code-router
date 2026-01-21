@@ -157,6 +157,14 @@ async function handleProjectList(): Promise<void> {
  * Handle 'project scan' command (Story 1.4: Rescan project for new or deleted agents)
  * @param args - Command arguments (e.g., ['<project-id>'])
  */
+/**
+ * Helper function to determine if spacing is needed between result sections
+ * @param hasMoreSections - Whether there are more sections to display after current one
+ */
+function shouldAddSpacing(hasMoreSections: boolean): boolean {
+  return hasMoreSections;
+}
+
 export async function handleProjectScan(args: string[]): Promise<void> {
   const projectId = args[0];
 
@@ -170,7 +178,7 @@ export async function handleProjectScan(args: string[]): Promise<void> {
   const pm = new ProjectManager(PROJECTS_FILE);
 
   try {
-    // AC4: Validate project ID format before processing
+    // AC2: Validate project ID format before processing
     if (!Validators.isValidAgentId(projectId)) {
       console.error(`✗ Error: Invalid project ID: ${projectId}`);
       console.error('\nProject ID must be a valid UUID v4 format');
@@ -181,7 +189,16 @@ export async function handleProjectScan(args: string[]): Promise<void> {
     // Call rescanProject method
     const result: RescanResult = await pm.rescanProject(projectId);
 
-    // AC3: Display scan summary
+    // Validate RescanResult structure
+    if (!result || typeof result !== 'object' ||
+        !Array.isArray(result.newAgents) ||
+        !Array.isArray(result.deletedAgents) ||
+        !Array.isArray(result.failedAgents) ||
+        typeof result.totalAgents !== 'number') {
+      throw new Error('Invalid rescan result structure returned from ProjectManager');
+    }
+
+    // AC1, AC4: Display scan summary
     if (result.newAgents.length === 0 && result.deletedAgents.length === 0 && result.failedAgents.length === 0) {
       console.log('✓ No changes detected. All agents up to date.');
     } else {
@@ -189,23 +206,32 @@ export async function handleProjectScan(args: string[]): Promise<void> {
 
       if (result.newAgents.length > 0) {
         console.log(`  Found ${result.newAgents.length} new agent(s):`);
-        result.newAgents.forEach(name => console.log(`  ├─ ${name}`));
-        if (result.deletedAgents.length > 0 || result.failedAgents.length > 0) {
+        result.newAgents.forEach((name, idx) => {
+          const isLast = idx === result.newAgents.length - 1 && result.deletedAgents.length === 0 && result.failedAgents.length === 0;
+          console.log(`  ${isLast ? '└─' : '├─'} ${name}`);
+        });
+        if (shouldAddSpacing(result.deletedAgents.length > 0 || result.failedAgents.length > 0)) {
           console.log('');
         }
       }
 
       if (result.deletedAgents.length > 0) {
         console.log(`  Removed ${result.deletedAgents.length} deleted agent(s):`);
-        result.deletedAgents.forEach(agent => console.log(`  ├─ ${agent.name}`));
-        if (result.failedAgents.length > 0) {
+        result.deletedAgents.forEach((agent, idx) => {
+          const isLast = idx === result.deletedAgents.length - 1 && result.failedAgents.length === 0;
+          console.log(`  ${isLast ? '└─' : '├─'} ${agent.name}`);
+        });
+        if (shouldAddSpacing(result.failedAgents.length > 0)) {
           console.log('');
         }
       }
 
       if (result.failedAgents.length > 0) {
         console.log(`  ${result.failedAgents.length} agent(s) failed to process:`);
-        result.failedAgents.forEach(name => console.log(`  ├─ ${name}`));
+        result.failedAgents.forEach((name, idx) => {
+          const isLast = idx === result.failedAgents.length - 1;
+          console.log(`  ${isLast ? '└─' : '├─'} ${name}`);
+        });
       }
 
       console.log(`\n  Total agents: ${result.totalAgents}`);
@@ -232,7 +258,7 @@ export async function handleProjectScan(args: string[]): Promise<void> {
             await configureNewAgentsInteractive(projectId, newAgentConfigs);
           }
         } else {
-          // AC5: Skip configuration path
+          // AC6: Skip configuration path (user declines)
           console.log('\nNew agents added without model configuration.');
           console.log('Configure later with: ccr project configure <id>');
           console.log('New agents will use Router.default until configured.');
