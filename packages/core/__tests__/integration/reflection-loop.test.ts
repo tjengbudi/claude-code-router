@@ -142,7 +142,7 @@ describe('Story 3.5: Reflection Loop Routing Consistency', () => {
   });
 
   describe('AC1: Consistent Routing Across Reflection Loop', () => {
-    test('should maintain consistent routing across 15-request workflow', async () => {
+    test('3.5-AC1-001: should maintain consistent routing across 15-request workflow', async () => {
       const sessionId = 'reflection-loop-15-req';
       const agentId = agentIds[0]; // Single agent for reflection loop
       const tracker = new CacheMetricsTracker();
@@ -181,7 +181,7 @@ describe('Story 3.5: Reflection Loop Routing Consistency', () => {
       expect(sessionAgentModelCache.size).toBe(1); // Only one cache entry for single agent
     });
 
-    test('should maintain consistent routing across 20-request workflow', async () => {
+    test('3.5-AC1-002: should maintain consistent routing across 20-request workflow', async () => {
       const sessionId = 'reflection-loop-20-req';
       const agentId = agentIds[0];
       const tracker = new CacheMetricsTracker();
@@ -217,7 +217,7 @@ describe('Story 3.5: Reflection Loop Routing Consistency', () => {
   });
 
   describe('AC2: Agent Switch Mid-Workflow', () => {
-    test('should handle agent switch mid-workflow transparently', async () => {
+    test('3.5-AC2-001: should handle agent switch mid-workflow transparently', async () => {
       const sessionId = 'session-agent-switch';
       const devAgentId = agentIds[0];
       const teaAgentId = agentIds[1];
@@ -274,7 +274,7 @@ describe('Story 3.5: Reflection Loop Routing Consistency', () => {
       expect(sessionAgentModelCache.size).toBe(2); // Two cache entries for two agents
     });
 
-    test('should handle multiple agent switches in single session', async () => {
+    test('3.5-AC2-002: should handle multiple agent switches in single session', async () => {
       const sessionId = 'session-multiple-switches';
       const tracker = new CacheMetricsTracker();
 
@@ -316,7 +316,7 @@ describe('Story 3.5: Reflection Loop Routing Consistency', () => {
   });
 
   describe('AC5: Multi-Agent Workflow Routing (NFR-P2)', () => {
-    test('should handle 5+ agent switches in single session with 90%+ cache', async () => {
+    test('3.5-AC3-001: should handle 5+ agent switches in single session with 90%+ cache', async () => {
       const sessionId = 'session-5-agent-switches';
       const tracker = new CacheMetricsTracker();
 
@@ -364,7 +364,7 @@ describe('Story 3.5: Reflection Loop Routing Consistency', () => {
       // Overall: 80% hit rate
     });
 
-    test('should maintain session isolation for multi-agent workflows', async () => {
+    test('3.5-AC5-001: should maintain session isolation for multi-agent workflows', async () => {
       const session1 = 'session-1-multi-agent';
       const session2 = 'session-2-multi-agent';
       const tracker1 = new CacheMetricsTracker();
@@ -415,7 +415,7 @@ describe('Story 3.5: Reflection Loop Routing Consistency', () => {
   });
 
   describe('AC3: Performance Under Load (NFR-P1, NFR-P3)', () => {
-    test('should meet NFR-P1: agent ID detection latency < 10ms', async () => {
+    test('3.5-AC6-001: should meet NFR-P1: agent ID detection latency < 10ms', async () => {
       // Import agent detection function from core package
       const { extractAgentId } = await import('../../src/utils/agentDetection');
 
@@ -448,7 +448,7 @@ describe('Story 3.5: Reflection Loop Routing Consistency', () => {
       expect(avgLatency).toBeLessThan(5); // Should be much faster on average
     });
 
-    test('should meet NFR-P1: cache lookup latency < 5ms', async () => {
+    test('3.5-AC6-002: should meet NFR-P1: cache lookup latency < 5ms', async () => {
       const sessionId = 'perf-cache-lookup';
       const agentId = agentIds[0];
       const cacheKey = `${sessionId}:${project1Id}:${agentId}`;
@@ -478,7 +478,7 @@ describe('Story 3.5: Reflection Loop Routing Consistency', () => {
       expect(avgLatency).toBeLessThan(1); // Should be sub-millisecond
     });
 
-    test('should meet NFR-P1: total routing overhead < 50ms', async () => {
+    test('3.5-AC6-003: should meet NFR-P1: total routing overhead < 50ms', async () => {
       // This simulates the full routing flow: agent detection + project detection + cache lookup
       const { extractAgentId } = await import('../../src/utils/agentDetection');
 
@@ -529,7 +529,7 @@ describe('Story 3.5: Reflection Loop Routing Consistency', () => {
       expect(avgLatency).toBeLessThan(10); // Should be much faster
     });
 
-    test('should meet NFR-P3: system overhead < 10% vs vanilla CCR', async () => {
+    test('3.5-AC6-004: should meet NFR-P3: system overhead < 10% vs vanilla CCR', async () => {
       // Note: For sub-millisecond operations, percentage overhead is not a meaningful metric.
       // This test verifies absolute performance instead, which is what matters for user experience.
       const agentSystemLatencies: number[] = [];
@@ -584,7 +584,7 @@ describe('Story 3.5: Reflection Loop Routing Consistency', () => {
   });
 
   describe('Task 3: Edge Cases and Graceful Degradation (NFR-R3)', () => {
-    test('should handle agent not found mid-workflow with graceful fallback', async () => {
+    test('3.5-AC7-001: should handle agent not found mid-workflow with graceful fallback', async () => {
       const sessionId = 'edge-case-agent-not-found';
       const unknownAgentId = 'unknown-agent-uuid-not-in-cache';
       const tracker = new CacheMetricsTracker();
@@ -618,7 +618,7 @@ describe('Story 3.5: Reflection Loop Routing Consistency', () => {
       expect(sessionAgentModelCache.get(cacheKey)).toBe('default-model');
     });
 
-    test('should handle invalid agent ID format gracefully', async () => {
+    test('3.5-AC7-002: should handle invalid agent ID format gracefully', async () => {
       const sessionId = 'edge-case-invalid-agent-id';
       const invalidAgentIds = [
         '', // Empty string
@@ -644,7 +644,7 @@ describe('Story 3.5: Reflection Loop Routing Consistency', () => {
       expect(sessionAgentModelCache.size).toBe(3);
     });
 
-    test('should handle cache eviction during long workflows (1000+ entries)', async () => {
+    test('3.5-AC7-003: should handle cache eviction during long workflows (1000+ entries)', async () => {
       const sessionId = 'edge-case-cache-eviction';
       const tracker = new CacheMetricsTracker();
 
@@ -676,7 +676,7 @@ describe('Story 3.5: Reflection Loop Routing Consistency', () => {
       expect(sessionAgentModelCache.get(newCacheKey)).toBe('new-model');
     });
 
-    test('should handle concurrent sessions with same agents without collision', async () => {
+    test('3.5-AC5-002: should handle concurrent sessions with same agents without collision', async () => {
       const sessionCount = 20;
       const agentId = agentIds[0];
       const tracker = new CacheMetricsTracker();
@@ -714,7 +714,7 @@ describe('Story 3.5: Reflection Loop Routing Consistency', () => {
       }
     });
 
-    test('should maintain consistency after configuration change during session', async () => {
+    test('3.5-AC4-001: should maintain consistency after configuration change during session', async () => {
       const sessionId = 'config-change-session';
       const agentId = agentIds[0];
       const tracker = new CacheMetricsTracker();
@@ -774,7 +774,7 @@ describe('Story 3.5: Reflection Loop Routing Consistency', () => {
       expect(sessionAgentModelCache.get(cacheKey)).toBe(modelA);
     });
 
-    test('should handle configuration change with mock getModelByAgentId (AC4)', async () => {
+    test('3.5-AC4-002: should handle configuration change with mock getModelByAgentId (AC4)', async () => {
       // This test validates AC4 requirement: "Test using mock: mockProjectManager.getModelByAgentId() returns different value on second call"
       const sessionId = 'config-change-mock-test';
       const agentId = agentIds[0];
@@ -833,7 +833,7 @@ describe('Story 3.5: Reflection Loop Routing Consistency', () => {
       // This validates AC4: configuration changes don't affect active sessions (by design)
     });
 
-    test('should handle auto-registration during reflection loop', async () => {
+    test('3.5-AC8-001: should handle auto-registration during reflection loop', async () => {
       const sessionId = 'auto-registration-session';
       const newAgentId = 'new-unregistered-agent-uuid';
       const tracker = new CacheMetricsTracker();
