@@ -444,17 +444,7 @@ describe('Backward Compatibility Validation (Story 5.3)', () => {
       expect(avgTime).toBeLessThan(20);
     });
 
-    test('5.3-AC3-004: should complete early exit in < 1ms', async () => {
-      // Given: A non-BMM request
-      // When: Performing hasAgentTag check
-      // Then: Early exit should complete in < 1ms
-
-      const start = performance.now();
-      const hasAgentTag = 'request without agent tag'.includes('CCR-AGENT-ID');
-      const duration = performance.now() - start;
-
-      expect(duration).toBeLessThan(1);
-    });
+    // Note: AC3-004 removed - duplicate of AC5-003 (early exit timing test)
 
     test('5.3-AC3-005: should keep session cache size at 0 for non-BMM', async () => {
       // Given: Non-BMM routing requests
@@ -490,19 +480,7 @@ describe('Backward Compatibility Validation (Story 5.3)', () => {
       }
     });
 
-    test('5.3-AC3-007: should not perform file I/O when hasAgentTag = false', async () => {
-      // Given: Non-BMM routing requests
-      // When: Processing requests
-      // Then: No file I/O to projects.json should occur
-
-      const hasAgentTag = 'request without agent tag'.includes('CCR-AGENT-ID');
-
-      if (!hasAgentTag) {
-        // Early exit - no file I/O
-        // File I/O only occurs when hasAgentTag = true
-        expect(hasAgentTag).toBe(false);
-      }
-    });
+    // Note: AC3-007 removed - duplicate of AC5-004 (file I/O test)
 
     test('5.3-AC3-008: should handle concurrent non-BMM requests', async () => {
       // Given: Multiple concurrent non-BMM requests
@@ -520,36 +498,7 @@ describe('Backward Compatibility Validation (Story 5.3)', () => {
       });
     });
 
-    test('5.3-AC3-009: should add minimal memory overhead for inactive agent system', async () => {
-      // Given: Inactive agent system (no projects.json)
-      // When: Measuring memory usage
-      // Then: Memory overhead should be minimal (reasonable threshold for JS runtime)
-
-      // Force GC if available to reduce flakiness
-      if (global.gc) {
-        global.gc();
-      }
-
-      const initialMemory = process.memoryUsage().heapUsed;
-
-      // Simulate non-BMM request processing (early exit)
-      for (let i = 0; i < 1000; i++) {
-        const hasAgentTag = 'request without agent tag'.includes('CCR-AGENT-ID');
-      }
-
-      // Force GC if available to get more accurate measurement
-      if (global.gc) {
-        global.gc();
-      }
-
-      const finalMemory = process.memoryUsage().heapUsed;
-      const memoryOverhead = finalMemory - initialMemory;
-
-      // Memory overhead should be minimal (< 500KB is reasonable for JS runtime in test suite)
-      // Note: JavaScript memory management is not deterministic due to GC and test isolation
-      // This test verifies the early exit path doesn't accumulate significant memory
-      expect(memoryOverhead).toBeLessThan(512000); // < 500KB
-    });
+    // Note: AC3-009 removed - duplicate of AC5-002 (memory overhead test)
 
     test('5.3-AC3-010: should not initialize agent system for non-BMM projects', async () => {
       // Given: Non-BMM project (no projects.json)
