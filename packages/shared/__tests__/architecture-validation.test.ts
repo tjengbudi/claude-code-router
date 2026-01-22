@@ -935,4 +935,165 @@ describe('Non-Invasive Architecture Validation - Story 5.1', () => {
       expect(routerContent).toContain('FALLBACK_DEFAULT_MODEL');
     });
   });
+
+  describe('Story 5.3: Backward Compatibility Validation (Task 5.8 Extension)', () => {
+    it('should validate AC5: Inactive Agent System Performance - early exit < 1ms', () => {
+      const routerPath = path.join(CORE_SRC, 'router.ts');
+      const routerContent = readFileSync(routerPath, 'utf-8');
+
+      // Verify early exit optimization exists (hasAgentTag check at line 221)
+      expect(routerContent).toContain("hasAgentTag = req.body.system?.[0]?.text?.includes('CCR-AGENT-ID')");
+
+      // Verify early exit comes before expensive ProjectManager operations
+      const hasAgentTagIndex = routerContent.indexOf("const hasAgentTag = req.body.system?.[0]?.text?.includes");
+      const projectManagerIndex = routerContent.indexOf('await projectManager.detectProject');
+
+      // hasAgentTag should be checked before ProjectManager operations
+      expect(hasAgentTagIndex).toBeGreaterThan(-1);
+      if (projectManagerIndex > 0) {
+        expect(hasAgentTagIndex).toBeLessThan(projectManagerIndex);
+      }
+    });
+
+    it('should validate AC3: Non-BMM User Experience - no agent logs for non-BMM', () => {
+      const routerPath = path.join(CORE_SRC, 'router.ts');
+      const routerContent = readFileSync(routerPath, 'utf-8');
+
+      // Verify hasAgentTag early exit exists
+      expect(routerContent).toContain('hasAgentTag');
+
+      // Verify agent-related operations are guarded by hasAgentTag check
+      const hasAgentTagCheck = routerContent.includes("if (hasAgentTag)");
+      expect(hasAgentTagCheck).toBe(true);
+    });
+
+    it('should validate AC1: Config.json Compatibility - no breaking changes', () => {
+      const routerPath = path.join(CORE_SRC, 'router.ts');
+      const routerContent = readFileSync(routerPath, 'utf-8');
+
+      // Verify Router.default fallback mechanism exists for backward compatibility
+      expect(routerContent).toContain('Router?.default');
+      expect(routerContent).toContain('FALLBACK_DEFAULT_MODEL');
+
+      // Verify fallback is the last resort (after agent routing)
+      const fallbackIndex = routerContent.indexOf('const defaultModel = Router?.default || FALLBACK_DEFAULT_MODEL');
+      const agentSystemEnd = routerContent.indexOf('// ============ END: Agent System Integration ============');
+
+      expect(fallbackIndex).toBeGreaterThan(agentSystemEnd);
+    });
+
+    it('should validate AC2: Complete Routing Priority Order - agent at priority 6.5', () => {
+      const routerPath = path.join(CORE_SRC, 'router.ts');
+      const routerLines = readFileSync(routerPath, 'utf-8').split('\n');
+
+      // Verify agent routing is documented with priority 6.5
+      const agentPriority = routerLines.findIndex(line =>
+        line.includes('Priority 6.5') && line.includes('Agent-based routing')
+      );
+
+      // Verify agent routing priority exists
+      expect(agentPriority).toBeGreaterThan(-1);
+
+      // Verify the priority comment mentions it comes between think model and Router.default
+      const agentPriorityLine = routerLines[agentPriority];
+      expect(agentPriorityLine).toMatch(/Priority 6\.5.*between.*think model.*Router\.default/);
+    });
+
+    it('should validate AC4: CLI Commands - project command is additive only', () => {
+      const cliPath = path.join(CLI_SRC, 'cli.ts');
+      const cliContent = readFileSync(cliPath, 'utf-8');
+
+      // Verify project command exists
+      expect(cliContent).toContain('case "project":');
+
+      // Verify existing commands are still present
+      const existingCommands = ['start', 'stop', 'restart', 'status', 'code', 'model'];
+      for (const cmd of existingCommands) {
+        expect(cliContent).toContain(`case "${cmd}":`);
+      }
+    });
+
+    it('should validate Transformer Compatibility - transformers work with agent routing', () => {
+      const routerPath = path.join(CORE_SRC, 'router.ts');
+      const routerContent = readFileSync(routerPath, 'utf-8');
+
+      // Agent routing should not interfere with transformer system
+      // Transformers are applied by the @musistudio/llms package after routing
+      // This test verifies agent routing doesn't break transformer flow
+
+      // Verify agent routing returns model in correct format for transformers
+      expect(routerContent).toContain('return { model: cachedModel, scenarioType: \'default\' }');
+      expect(routerContent).toContain('return { model: agentModel, scenarioType: \'default\' }');
+    });
+
+    it('should validate Graceful Degradation from Story 5.2 integration', () => {
+      const routerPath = path.join(CORE_SRC, 'router.ts');
+      const routerContent = readFileSync(routerPath, 'utf-8');
+
+      // Verify try-catch exists for graceful degradation
+      expect(routerContent).toContain('try {');
+      expect(routerContent).toContain('catch (error)');
+
+      // Verify fallback to Router.default on error
+      const catchBlockIndex = routerContent.indexOf('catch (error)');
+      const fallbackComment = routerContent.indexOf('Agent routing failed, using Router.default');
+
+      if (catchBlockIndex > 0) {
+        // Error handling should mention fallback to Router.default
+        expect(fallbackComment).toBeGreaterThan(catchBlockIndex - 200); // Within reasonable distance
+      }
+    });
+
+    it('should validate Cache Key Format Stability from Story 3.1', () => {
+      const routerPath = path.join(CORE_SRC, 'router.ts');
+      const routerContent = readFileSync(routerPath, 'utf-8');
+
+      // Verify cache key format: ${sessionId}:${projectId}:${agentId}
+      // This format must remain stable for backward compatibility
+      expect(routerContent).toContain('const cacheKey = `${sessionId}:${projectId}:${agentId}`');
+
+      // Verify format is used consistently
+      const cacheKeyPattern = /\$\{sessionId\}:\$\{projectId\}:\$\{agentId\}/;
+      expect(routerContent).toMatch(cacheKeyPattern);
+    });
+
+    it('should validate Memory Overhead - LRU cache has max entries', () => {
+      const routerPath = path.join(CORE_SRC, 'router.ts');
+      const routerContent = readFileSync(routerPath, 'utf-8');
+
+      // Verify LRU cache has max entries limit to prevent unbounded memory growth
+      expect(routerContent).toContain('max: 1000');
+
+      // Verify cache is LRU (evicts least recently used)
+      expect(routerContent).toContain('new LRUCache');
+    });
+
+    it('should validate Performance Monitoring - does not impact non-BMM users', () => {
+      const routerPath = path.join(CORE_SRC, 'router.ts');
+      const routerContent = readFileSync(routerPath, 'utf-8');
+
+      // Verify performance monitoring is conditional (only when enabled)
+      expect(routerContent).toContain("enabled: process.env.CCR_PERFORMANCE_MONITORING === 'true'");
+
+      // Verify performance monitoring has early return when disabled
+      expect(routerContent).toContain('if (!this.enabled) return');
+
+      // This ensures non-BMM users are not impacted by monitoring overhead
+    });
+
+    it('should validate Non-Invasive Extension Pattern - zero modifications to core logic', () => {
+      const routerPath = path.join(CORE_SRC, 'router.ts');
+      const routerContent = readFileSync(routerPath, 'utf-8');
+
+      // Verify agent system is isolated between START/END markers
+      expect(routerContent).toContain('START: Agent System Integration');
+      expect(routerContent).toContain('END: Agent System Integration');
+
+      // Verify existing router scenarios (background, longContext, webSearch) still exist
+      expect(routerContent).toContain('background');
+      expect(routerContent).toContain('longContext');
+      expect(routerContent).toContain('webSearch');
+      expect(routerContent).toContain('think');
+    });
+  });
 });

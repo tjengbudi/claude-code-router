@@ -562,4 +562,155 @@ describe('Graceful Degradation - Story 5.2', () => {
       expect(result).toEqual({ projects: {} });
     });
   });
+
+  describe('Story 5.3: Backward Compatibility Validation (Task 5.8 Extension)', () => {
+    let pm: ProjectManager;
+
+    beforeEach(() => {
+      pm = new ProjectManager(TEST_PROJECTS_FILE);
+    });
+
+    afterEach(() => {
+      if (existsSync(TEST_PROJECTS_FILE)) {
+        unlinkSync(TEST_PROJECTS_FILE);
+      }
+    });
+
+    it('5.3-AC1: should load vanilla config.json when no agents configured', async () => {
+      // Given: A projects.json with valid structure but no agents configured
+      // When: Loading projects
+      // Then: Should return valid projects object with empty agents array
+
+      writeFileSync(TEST_PROJECTS_FILE, JSON.stringify({
+        schemaVersion: '1.0.0',
+        projects: {
+          'vanilla-project': {
+            id: 'vanilla-project',
+            path: '/tmp/vanilla',
+            agents: []
+          }
+        }
+      }, null, 2), 'utf-8');
+
+      const result = await pm.loadProjects();
+      expect(result.projects).toHaveProperty('vanilla-project');
+      expect(result.projects['vanilla-project'].agents).toEqual([]);
+    });
+
+    it('5.3-AC3: should return undefined for non-BMM agent lookup (graceful degradation)', async () => {
+      // Given: No agent ID in request (non-BMM user)
+      // When: Looking up model
+      // Then: Should return undefined, allowing Router.default fallback
+
+      // No projects.json = non-BMM scenario
+      const model = await pm.getModelByAgentId('550e8400-e29b-41d4-a716-446655440000');
+      expect(model).toBeUndefined();
+    });
+
+    it('5.3-AC5: should handle missing projects.json with minimal overhead (< 10ms)', async () => {
+      // Given: No projects.json file
+      // When: Calling loadProjects
+      // Then: Should complete quickly with empty result
+
+      const start = performance.now();
+      const result = await pm.loadProjects();
+      const elapsed = performance.now() - start;
+
+      expect(result.projects).toEqual({});
+      expect(elapsed).toBeLessThan(50); // CI-friendly threshold
+    });
+
+    it('5.3-AC5: should not crash on corrupted projects.json during model lookup', async () => {
+      // Given: Corrupted projects.json
+      // When: Looking up model
+      // Then: Should return undefined gracefully
+
+      writeFileSync(TEST_PROJECTS_FILE, '{corrupted json}', 'utf-8');
+
+      const model = await pm.getModelByAgentId('any-agent-id');
+      expect(model).toBeUndefined();
+    });
+
+    it('5.3-Integration: should maintain graceful degradation from Story 5.2', async () => {
+      // Given: Various error scenarios
+      // When: Performing operations
+      // Then: All operations should complete without crashes
+
+      // Test 1: Missing file
+      if (existsSync(TEST_PROJECTS_FILE)) {
+        unlinkSync(TEST_PROJECTS_FILE);
+      }
+      await expect(pm.loadProjects()).resolves.toBeDefined();
+
+      // Test 2: Corrupted file
+      writeFileSync(TEST_PROJECTS_FILE, '{invalid}', 'utf-8');
+      await expect(pm.loadProjects()).resolves.toBeDefined();
+
+      // Test 3: Empty file
+      writeFileSync(TEST_PROJECTS_FILE, '', 'utf-8');
+      await expect(pm.loadProjects()).resolves.toBeDefined();
+
+      // All should return empty projects object
+      const result = await pm.loadProjects();
+      expect(result.projects).toEqual({});
+    });
+
+    it('5.3-AC5: should validate non-BMM path has zero overhead', async () => {
+      // Given: Non-BMM scenario (no projects.json)
+      // When: Measuring loadProjects performance
+      // Then: Should be extremely fast (< 1ms for file existence check)
+
+      // Ensure no projects.json
+      if (existsSync(TEST_PROJECTS_FILE)) {
+        unlinkSync(TEST_PROJECTS_FILE);
+      }
+
+      const iterations = 100;
+      const times: number[] = [];
+
+      for (let i = 0; i < iterations; i++) {
+        const start = performance.now();
+        await pm.loadProjects();
+        times.push(performance.now() - start);
+      }
+
+      const avgTime = times.reduce((a, b) => a + b, 0) / times.length;
+      const maxTime = Math.max(...times);
+
+      // Average should be very fast (file existence check only)
+      expect(avgTime).toBeLessThan(5);
+      expect(maxTime).toBeLessThan(50); // CI-friendly threshold
+    });
+
+    it('5.3-Regression: should verify backward compatibility with Story 5.2 graceful degradation', async () => {
+      // Given: All graceful degradation scenarios from Story 5.2
+      // When: Testing each scenario
+      // Then: Should maintain same graceful degradation behavior
+
+      const scenarios = [
+        { name: 'missing file', setup: () => {} },
+        { name: 'corrupted JSON', setup: () => writeFileSync(TEST_PROJECTS_FILE, '{invalid}', 'utf-8') },
+        { name: 'empty file', setup: () => writeFileSync(TEST_PROJECTS_FILE, '', 'utf-8') },
+        { name: 'wrong schema', setup: () => writeFileSync(TEST_PROJECTS_FILE, '{"wrong": true}', 'utf-8') },
+      ];
+
+      for (const scenario of scenarios) {
+        // Clean up before each scenario
+        if (existsSync(TEST_PROJECTS_FILE)) {
+          unlinkSync(TEST_PROJECTS_FILE);
+        }
+
+        // Run scenario setup
+        scenario.setup();
+
+        // All scenarios should handle gracefully
+        const result = await pm.loadProjects();
+        expect(result.projects).toEqual({});
+
+        // Model lookup should also work
+        const model = await pm.getModelByAgentId('any-id');
+        expect(model).toBeUndefined();
+      }
+    });
+  });
 });

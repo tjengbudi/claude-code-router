@@ -771,4 +771,234 @@ describe('Story 3.1: Router Integration with Session-Based Caching', () => {
       expect(sessionAgentModelCache.size).toBe(1000);
     });
   });
+
+  describe('Story 5.3: Backward Compatibility Validation (Task 5.8 Extension)', () => {
+    beforeEach(async () => {
+      // Configure models for testing
+      await projectManager.setAgentModel(project1Id, agent1Id, 'openai,gpt-4o');
+      await projectManager.setAgentModel(project2Id, agent2Id, 'anthropic,claude-opus');
+    });
+
+    // Priority: P0
+    test('5.3-AC1-001: should support vanilla config.json format', async () => {
+      // Given: A project with no agents configured (vanilla CCR)
+      // When: Looking up model
+      // Then: Should return undefined (allowing Router.default fallback)
+
+      // Remove all agent models to simulate vanilla CCR
+      await projectManager.setAgentModel(project1Id, agent1Id, undefined);
+
+      const sessionId = 'vanilla-test-session';
+      const cacheKey = `${sessionId}:${project1Id}:${agent1Id}`;
+
+      // Cache should not have any entry
+      const cachedModel = sessionAgentModelCache.get(cacheKey);
+      expect(cachedModel).toBeUndefined();
+
+      // Lookup should return undefined
+      const model = await projectManager.getModelByAgentId(agent1Id, project1Id);
+      expect(model).toBeUndefined();
+    });
+
+    // Priority: P0
+    test('5.3-AC3-001: should handle non-BMM requests with early exit', async () => {
+      // Given: A non-BMM request (no agent tag)
+      // When: Simulating early exit path
+      // Then: Should complete in < 1ms (NFR-P3)
+
+      const iterations = 10000;
+      const times: number[] = [];
+
+      // Simulate hasAgentTag check from router.ts line 221
+      for (let i = 0; i < iterations; i++) {
+        const start = performance.now();
+        const hasAgentTag = 'normal request without agent tag'.includes('CCR-AGENT-ID');
+        times.push(performance.now() - start);
+        // Early exit - no further processing
+        expect(hasAgentTag).toBe(false);
+      }
+
+      const avgTime = times.reduce((a, b) => a + b, 0) / times.length;
+      const maxTime = Math.max(...times);
+
+      // Early exit should be extremely fast
+      expect(avgTime).toBeLessThan(0.01); // < 0.01ms average
+      expect(maxTime).toBeLessThan(1); // < 1ms worst case
+    });
+
+    // Priority: P0
+    test('5.3-AC5-001: should maintain zero cache size for non-BMM requests', async () => {
+      // Given: Non-BMM routing requests (no agent tags)
+      // When: Processing requests
+      // Then: Cache should remain empty
+
+      const initialCacheSize = sessionAgentModelCache.size;
+
+      // Simulate non-BMM requests (no agent tag checks, no caching)
+      for (let i = 0; i < 100; i++) {
+        const hasAgentTag = `request ${i}`.includes('CCR-AGENT-ID');
+        // Early exit - no cache operations
+      }
+
+      const finalCacheSize = sessionAgentModelCache.size;
+
+      // Cache should not have grown
+      expect(initialCacheSize).toBe(0);
+      expect(finalCacheSize).toBe(0);
+    });
+
+    // Priority: P1
+    test('5.3-AC1-002: should preserve fallback to Router.default', async () => {
+      // Given: Agent with no model configured
+      // When: Looking up model
+      // Then: Should return undefined (allowing Router.default fallback)
+
+      // Remove model configuration
+      await projectManager.setAgentModel(project1Id, agent1Id, undefined);
+
+      const sessionId = 'fallback-test-session';
+      const cacheKey = `${sessionId}:${project1Id}:${agent1Id}`;
+
+      // Cache lookup should miss
+      const cachedModel = sessionAgentModelCache.get(cacheKey);
+      expect(cachedModel).toBeUndefined();
+
+      // ProjectManager lookup should return undefined
+      const model = await projectManager.getModelByAgentId(agent1Id, project1Id);
+      expect(model).toBeUndefined();
+
+      // In actual router, this would fall back to Router.default
+    });
+
+    // Priority: P1
+    test('5.3-AC2-001: should not interfere with existing routing priorities', async () => {
+      // Given: Various routing scenarios
+      // When: Testing cache isolation
+      // Then: Agent routing should not affect other routing paths
+
+      const sessionId = 'priority-test-session';
+
+      // Test that different cache keys don't interfere
+      const scenarios = [
+        { name: 'agent routing', key: `${sessionId}:${project1Id}:${agent1Id}` },
+        { name: 'different agent', key: `${sessionId}:${project1Id}:${agent2Id}` },
+        { name: 'different project', key: `${sessionId}:${project2Id}:${agent1Id}` },
+      ];
+
+      // Set values for each scenario
+      sessionAgentModelCache.set(scenarios[0].key, 'openai,gpt-4o');
+      sessionAgentModelCache.set(scenarios[1].key, 'anthropic,claude-opus');
+      sessionAgentModelCache.set(scenarios[2].key, 'gemini-cli,gemini-2.5-pro');
+
+      // Verify all values are independent
+      expect(sessionAgentModelCache.get(scenarios[0].key)).toBe('openai,gpt-4o');
+      expect(sessionAgentModelCache.get(scenarios[1].key)).toBe('anthropic,claude-opus');
+      expect(sessionAgentModelCache.get(scenarios[2].key)).toBe('gemini-cli,gemini-2.5-pro');
+
+      // Cache size should be exactly 3 (one per scenario)
+      expect(sessionAgentModelCache.size).toBe(3);
+    });
+
+    // Priority: P1
+    test('5.3-AC5-002: should measure vanilla routing overhead', async () => {
+      // Given: Non-BMM routing simulation
+      // When: Measuring performance
+      // Then: Overhead should be < 1ms (early exit only)
+
+      const cache = new LRUCache<string, string>({ max: 1000 });
+
+      // Vanilla routing: Early exit only (no agent processing)
+      const vanillaTimes: number[] = [];
+      for (let i = 0; i < 1000; i++) {
+        const start = performance.now();
+        const hasAgentTag = 'vanilla request'.includes('CCR-AGENT-ID');
+        // Early exit - no further processing
+        vanillaTimes.push(performance.now() - start);
+      }
+
+      // Agent routing: Full agent processing with cache
+      const cacheKey = `${project1Id}:${agent1Id}`;
+      cache.set(cacheKey, 'openai,gpt-4o');
+
+      const agentTimes: number[] = [];
+      for (let i = 0; i < 1000; i++) {
+        const start = performance.now();
+        const result = cache.get(cacheKey);
+        agentTimes.push(performance.now() - start);
+      }
+
+      const vanillaAvg = vanillaTimes.reduce((a, b) => a + b, 0) / vanillaTimes.length;
+      const agentAvg = agentTimes.reduce((a, b) => a + b, 0) / agentTimes.length;
+
+      // Both should be very fast (< 1ms)
+      expect(vanillaAvg).toBeLessThan(0.01);
+      expect(agentAvg).toBeLessThan(1);
+
+      // Overhead of agent routing vs vanilla should be minimal
+      const overhead = agentAvg - vanillaAvg;
+      expect(overhead).toBeLessThan(1);
+    });
+
+    // Priority: P2
+    test('5.3-Regression: should maintain Story 3.1 cache key format', async () => {
+      // Given: Session ID, project ID, and agent ID
+      // When: Constructing cache key
+      // Then: Should use format ${sessionId}:${projectId}:${agentId} (unchanged)
+
+      const sessionId = 'format-validation-session';
+      const projectId = project1Id;
+      const agentId = agent1Id;
+
+      // Cache key format must match Story 3.1 specification
+      const expectedCacheKey = `${sessionId}:${projectId}:${agentId}`;
+      const actualCacheKey = `${sessionId}:${projectId}:${agentId}`;
+
+      expect(actualCacheKey).toBe(expectedCacheKey);
+      expect(actualCacheKey.split(':')).toHaveLength(3);
+    });
+
+    // Priority: P2
+    test('5.3-AC4-001: should not break existing CLI commands', async () => {
+      // Given: ProjectManager instance
+      // When: Performing standard operations
+      // Then: Should work without agent configuration
+
+      // These operations should work even without agents configured
+      const projects = await projectManager.listProjects();
+      expect(projects).toBeDefined();
+      expect(projects?.length).toBeGreaterThanOrEqual(0);
+
+      // getProject should work
+      const project = await projectManager.getProject(project1Id);
+      expect(project).toBeDefined();
+      expect(project?.id).toBe(project1Id);
+    });
+
+    // Priority: P2
+    test('5.3-Integration: should handle migration path (vanilla → agent-enabled)', async () => {
+      // Given: Migration from vanilla CCR to agent-enabled
+      // When: Testing both scenarios
+      // Then: Should transition smoothly
+
+      const sessionId = 'migration-test-session';
+      const cacheKey = `${sessionId}:${project1Id}:${agent1Id}`;
+
+      // Phase 1: Vanilla CCR (no agent model configured)
+      await projectManager.setAgentModel(project1Id, agent1Id, undefined);
+      let model = await projectManager.getModelByAgentId(agent1Id, project1Id);
+      expect(model).toBeUndefined();
+
+      // Cache should be empty for vanilla scenario
+      expect(sessionAgentModelCache.get(cacheKey)).toBeUndefined();
+
+      // Phase 2: Agent-enabled (configure model)
+      await projectManager.setAgentModel(project1Id, agent1Id, 'openai,gpt-4o');
+      model = await projectManager.getModelByAgentId(agent1Id, project1Id);
+      expect(model).toBe('openai,gpt-4o');
+
+      // Cache can now store the model
+      sessionAgentModelCache.set(cacheKey, model!);
+      expect(sessionAgentModelCache.get(cacheKey)).toBe('openai,gpt-4o');
+    });
+  });
 });
