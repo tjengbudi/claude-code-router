@@ -21,3 +21,5 @@ export * from './ui/messages';
 // Export logging utilities (Story 5.4)
 export * from './logging/logger';
 
+// Export migration utilities (Story 5.6)
+export * from './migration';

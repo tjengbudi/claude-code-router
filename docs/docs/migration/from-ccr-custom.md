@@ -66,6 +66,47 @@ Local Only (~/.claude-code-router/):
 
 ## Migration Steps
 
+### Automated Migration (Recommended)
+
+The easiest way to migrate is using the automated migration tool:
+
+```bash
+# Preview migration without making changes
+ccr migrate from-ccr-custom --dry-run
+
+# Run the migration
+ccr migrate from-ccr-custom
+
+# Run with custom backup location
+ccr migrate from-ccr-custom --backup-dir ~/my-backups
+
+# Skip confirmation prompt
+ccr migrate from-ccr-custom -y
+```
+
+**What the automated migration does:**
+
+1. **Transforms schema**: Converts agents from Record to Array format
+2. **Adds timestamps**: Includes `createdAt` and `updatedAt` for each project
+3. **Adds schema version**: Sets `schemaVersion: "1.0.0"` for forward compatibility
+4. **Migrates model tags**: Moves `CCR-AGENT-MODEL` tags from agent files to `projects.json`
+5. **Removes old tags**: Cleans up `CCR-AGENT-MODEL` tags from agent files
+6. **Creates backup**: Automatically backs up your original `projects.json`
+
+**Validate migration integrity:**
+
+```bash
+# Validate after migration
+ccr migrate validate
+
+# Compare with original file
+ccr migrate validate --source-path ~/old-projects.json.backup
+```
+
+### Manual Migration
+
+If you prefer manual migration or need more control:
+
 ### Step 1: Uninstall ccr-custom
 
 ```bash
@@ -221,15 +262,15 @@ The new format uses UUIDs and stores data in `~/.claude-code-router/projects.jso
       path: "/home/user/my-project",
       createdAt: "2026-01-16T10:00:00.000Z",
       updatedAt: "2026-01-16T10:00:00.000Z",
-      agents: {
-        "550e8400-e29b-41d4-a716-446655440001": {
+      agents: [
+        {
           id: "550e8400-e29b-41d4-a716-446655440001",
           name: "dev.md",
           relativePath: ".bmad/bmm/agents/dev.md",
           absolutePath: "/home/user/my-project/.bmad/bmm/agents/dev.md",
           model: "openai,gpt-4o"
         }
-      }
+      ]
     }
   }
 }
@@ -328,6 +369,8 @@ Most CLI commands remain the same:
 | `ccr project list` | ✓ | ✓ | New command |
 | `ccr project configure` | ✓ | ✓ | New command |
 | `ccr project scan` | ✓ | ✓ | New command |
+| `ccr migrate from-ccr-custom` | ✗ | ✓ | New command |
+| `ccr migrate validate` | ✗ | ✓ | New command |
 
 ## Troubleshooting Migration Issues
 

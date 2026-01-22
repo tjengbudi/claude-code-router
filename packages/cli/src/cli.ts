@@ -19,6 +19,7 @@ import { parseStatusLineData, StatusLineInput } from "./utils/statusline";
 import {handlePresetCommand} from "./utils/preset";
 import { handleInstallCommand } from "./utils/installCommand";
 import { handleProjectCommand } from "./utils/projectCommand";
+import { handleMigrateCommand } from "./utils/migrateCommand";
 
 
 const command = process.argv[2];
@@ -35,6 +36,7 @@ const KNOWN_COMMANDS = [
   "preset",
   "install",
   "project",
+  "migrate",
   "activate",
   "env",
   "ui",
@@ -58,6 +60,7 @@ Commands:
   preset        Manage presets (export, install, list, delete)
   install       Install preset from GitHub marketplace
   project       Manage BMM projects (add, list, scan, configure)
+  migrate       Migrate from ccr-custom to CCR Enhanced format
   activate      Output environment variables for shell integration
   ui            Open the web UI in browser
   -v, version   Show version information
@@ -279,6 +282,9 @@ async function main() {
       break;
     case "project":
       await handleProjectCommand(process.argv.slice(3));
+      break;
+    case "migrate":
+      await handleMigrateCommand(process.argv.slice(3));
       break;
     case "activate":
     case "env":
