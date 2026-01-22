@@ -68,8 +68,115 @@ ccr restart
 
 Or restart directly through the Web UI.
 
-## What's Next?
+## Agent System Quick Start
 
-- [Basic Configuration](/docs/cli/config/basic) - Learn about configuration options
-- [Routing](/docs/cli/config/routing) - Configure smart routing rules
-- [CLI Commands](/docs/category/cli-commands) - Explore all CLI commands
+The CCR agent system enables automatic model routing based on which agent is active in Claude Code. Set up in under 5 minutes.
+
+### Step 1: Create Your Agent (1 minute)
+
+Create an agent file in your project:
+
+```bash
+# Navigate to your project
+cd ~/my-project
+
+# Create agents directory
+mkdir -p .bmad/bmm/agents
+
+# Create a simple agent
+cat > .bmad/bmm/agents/dev.md << 'EOF'
+# Dev Agent
+
+You are a development assistant. Help with coding tasks, debugging, and implementation.
+EOF
+```
+
+### Step 2: Register Your Project (1 minute)
+
+Add your project to CCR:
+
+```bash
+ccr project add ~/my-project
+```
+
+CCR will automatically:
+- Scan for agent files
+- Inject unique IDs into each agent
+- Prompt you to configure models
+
+**Example output:**
+
+```bash
+$ ccr project add ~/my-project
+
+Scanning /home/user/my-project for agents...
+
+Found 1 agent:
+  .bmad/bmm/agents/dev.md
+
+Registering project...
+Project ID: 550e8400-e29b-41d4-a716-446655440000
+Project name: my-project
+
+Configure agent models (press Enter to use Router.default):
+  dev.md [default]: openai,gpt-4o
+
+Project registered successfully!
+```
+
+### Step 3: Verify Agent Routing (1 minute)
+
+Test that agent routing works:
+
+```bash
+ccr code "Which agent are you using?"
+```
+
+You should see:
+
+```
+[CCR: Active Agent: 550e8400-e29b-41d4-a716-446655440001 (openai,gpt-4o)]
+
+I'm the Dev Agent, using the openai,gpt-4o model...
+```
+
+### Step 4: Share Agents with Your Team (2 minutes)
+
+Commit your agent files to git for team sharing:
+
+```bash
+# Agent files are safe to commit (no secrets)
+git add .bmad/bmm/agents/dev.md
+git commit -m "feat(agents): add dev agent"
+git push origin main
+```
+
+**Team members receive agents by:**
+
+```bash
+# Pull changes
+git pull origin main
+
+# Scan project to detect new agents
+ccr project scan my-project
+
+# Configure their own models
+dev.md: anthropic,claude-3-5-sonnet
+```
+
+Each team member configures their own models independently!
+
+### Quick Verification Checklist
+
+- [ ] Agent file created in `.bmad/bmm/agents/`
+- [ ] Project added with `ccr project add`
+- [ ] Agent has `CCR-AGENT-ID` tag (check with `cat .bmad/bmm/agents/dev.md`)
+- [ ] Model configured (or set to use Router.default)
+- [ ] `ccr code` shows agent identity at start of response
+
+### What's Next?
+
+- [CLI Project Commands](/docs/cli/commands/project) - Complete `ccr project` command reference
+- [Team: Git Workflow](/docs/team/git-workflow) - Learn about sharing agents via git
+- [Team: Onboarding](/docs/team/onboarding) - New team member setup guide
+- [Migration Guide](/docs/migration/from-ccr-custom) - Migrating from ccr-custom

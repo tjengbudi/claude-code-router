@@ -26,6 +26,7 @@
 - **CLI Model Management**: Manage models and providers directly from the terminal with `ccr model`.
 - **GitHub Actions Integration**: Trigger Claude Code tasks in your GitHub workflows.
 - **Plugin System**: Extend functionality with custom transformers.
+- **Agent System**: Automatic model routing based on active agents with git-based team sharing.
 
 ## 🚀 Getting Started
 
@@ -255,7 +256,85 @@ This command provides an interactive interface to:
 
 The CLI tool validates all inputs and provides helpful prompts to guide you through the configuration process, making it easy to manage complex setups without editing JSON files manually.
 
-### 6. Presets Management
+### 6. Agent System
+
+The CCR agent system enables automatic model routing based on which agent is active in Claude Code. This allows teams to share agent definitions via git while each member maintains their own model preferences.
+
+**Quick Setup:**
+
+```bash
+# 1. Create an agent file in your project
+mkdir -p .bmad/bmm/agents
+cat > .bmad/bmm/agents/dev.md << 'EOF'
+# Dev Agent
+
+You are a development assistant. Help with coding tasks.
+EOF
+
+# 2. Register your project with CCR
+ccr project add ~/my-project
+
+# 3. Configure models when prompted
+dev.md [default]: openai,gpt-4o
+
+# 4. Start using Claude Code with agent routing
+ccr code "Help me implement this feature"
+```
+
+**Key Features:**
+
+- **Automatic Routing**: CCR detects which agent is active and routes to the assigned model
+- **Git-Based Sharing**: Agent files with `CCR-AGENT-ID` tags are committed to git
+- **Independent Configuration**: Each team member has their own `projects.json` with their model preferences
+- **Zero Merge Conflicts**: No more fighting over shared configuration files
+- **CLI Commands**: `ccr project add/list/configure/scan` for management
+
+**Agent Routing in Action:**
+
+```bash
+$ ccr code "Which agent are you using?"
+
+[CCR: Active Agent: 550e8400-e29b-41d4-a716-446655440001 (openai,gpt-4o)]
+
+I'm the Dev Agent, using the openai,gpt-4o model...
+```
+
+**Team Workflow:**
+
+```bash
+# Developer A: Create and share agent
+cat > .bmad/bmm/agents/architect.md << 'EOF'
+# Architect Agent
+
+Design system architectures.
+EOF
+
+ccr project scan my-project  # Injects CCR-AGENT-ID
+git add .bmad/bmm/agents/architect.md
+git commit -m "feat(agents): add architect"
+git push
+
+# Developer B: Receive agent from git
+git pull
+ccr project scan my-project  # Detects new agent
+architect.md: openrouter,anthropic/claude-3.5-sonnet  # Configure their own model
+```
+
+**How It Works:**
+
+1. Agent `.md` files contain a `CCR-AGENT-ID` comment (injected by CCR)
+2. When an agent is active in Claude Code, CCR detects the ID from the system prompt
+3. CCR looks up the assigned model in `~/.claude-code-router/projects.json`
+4. Requests are routed to the assigned model for that agent
+
+**Documentation:**
+
+- [CLI Project Commands](/docs/cli/commands/project) - Complete command reference
+- [Team: Git Workflow](/docs/team/git-workflow) - Sharing agents via git
+- [Team: Onboarding](/docs/team/onboarding) - New team member setup
+- [Troubleshooting](/docs/troubleshooting) - Common issues and solutions
+
+### 7. Presets Management
 
 Presets allow you to save, share, and reuse configurations easily. You can export your current configuration as a preset and install presets from files or URLs.
 

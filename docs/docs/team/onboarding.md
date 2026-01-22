@@ -1,3 +1,7 @@
+---
+sidebar_position: 2
+---
+
 # Team Member Onboarding Guide
 
 This guide helps new team members get started with CCR agent routing in under 15 minutes.

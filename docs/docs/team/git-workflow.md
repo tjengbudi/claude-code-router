@@ -1,3 +1,7 @@
+---
+sidebar_position: 1
+---
+
 # Git-Based Agent Sharing
 
 This guide explains how teams share agent definitions using git, enabling zero-setup onboarding for new team members.

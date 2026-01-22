@@ -15,6 +15,7 @@ const sidebars: SidebarsConfig = {
         'cli/intro',
         'cli/installation',
         'cli/quick-start',
+        'troubleshooting',
         {
           type: 'category',
           label: 'Commands',
@@ -27,6 +28,7 @@ const sidebars: SidebarsConfig = {
           items: [
             'cli/commands/start',
             'cli/commands/model',
+            'cli/commands/project',
             'cli/commands/status',
             'cli/commands/statusline',
             'cli/commands/preset',
@@ -46,6 +48,19 @@ const sidebars: SidebarsConfig = {
           items: [
             'cli/config/basic',
             'cli/config/project-level',
+          ],
+        },
+        {
+          type: 'category',
+          label: 'Migration',
+          link: {
+            type: 'generated-index',
+            title: 'Migration Guides',
+            description: 'Migrate from other versions',
+            slug: 'category/migration',
+          },
+          items: [
+            'migration/from-ccr-custom',
           ],
         },
       ],
@@ -120,6 +135,20 @@ const sidebars: SidebarsConfig = {
         slug: 'category/presets',
       },
       items: ['presets/intro'],
+    },
+    {
+      type: 'category',
+      label: 'Team',
+      link: {
+        type: 'generated-index',
+        title: 'Team Collaboration',
+        description: 'Guides for team collaboration with agent sharing',
+        slug: 'category/team',
+      },
+      items: [
+        'team/git-workflow',
+        'team/onboarding',
+      ],
     },
   ],
 };
