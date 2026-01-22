@@ -13,7 +13,6 @@
  * - AC5: Validate Graceful Degradation
  */
 
-import { describe, it, expect, beforeAll } from 'vitest';
 import { readFileSync, existsSync } from 'fs';
 import path from 'path';
 
@@ -32,7 +31,7 @@ describe('Non-Invasive Architecture Validation - Story 5.1', () => {
         indexContent = readFileSync(indexPath, 'utf-8');
       });
 
-      it('should export ProjectManager (lines 3-6)', () => {
+      it('should export ProjectManager', () => {
         // Verify ProjectManager is exported from index.ts
         expect(indexContent).toMatch(/export\s+\*\s+from\s+['"`].*projectManager['"`]/);
       });
@@ -58,7 +57,7 @@ describe('Non-Invasive Architecture Validation - Story 5.1', () => {
         constantsContent = readFileSync(constantsPath, 'utf-8');
       });
 
-      it('should have PROJECTS_FILE constant (lines 20-68)', () => {
+      it('should have PROJECTS_FILE constant', () => {
         expect(constantsContent).toContain('PROJECTS_FILE');
         expect(constantsContent).toContain('projects.json');
       });
@@ -92,7 +91,7 @@ describe('Non-Invasive Architecture Validation - Story 5.1', () => {
         cliContent = readFileSync(cliPath, 'utf-8');
       });
 
-      it('should have project case in switch statement (lines 280-282)', () => {
+      it('should have project case in switch statement', () => {
         expect(cliContent).toContain('case "project":');
         expect(cliContent).toContain('handleProjectCommand');
       });
@@ -193,16 +192,16 @@ describe('Non-Invasive Architecture Validation - Story 5.1', () => {
   });
 
   describe('AC2: Verify New Files Follow Patterns', () => {
-    it('should validate projectManager.ts exists (808 lines)', () => {
+    it('should validate projectManager.ts exists with expected size', () => {
       const projectManagerPath = path.join(SHARED_SRC, 'projectManager.ts');
       expect(existsSync(projectManagerPath)).toBe(true);
 
       const content = readFileSync(projectManagerPath, 'utf-8');
       const lines = content.split('\n').length;
 
-      // Should be approximately 808 lines (allowing for growth)
-      // Only check minimum - no upper bound to allow for legitimate feature additions
+      // Should be approximately 808 lines - validate with reasonable range
       expect(lines).toBeGreaterThan(700);
+      expect(lines).toBeLessThan(1000);
     });
 
     it('should validate types/agent.ts exists', () => {
@@ -537,11 +536,11 @@ describe('Non-Invasive Architecture Validation - Story 5.1', () => {
     });
 
     it('should verify new files have expected line counts', () => {
-      // Verify minimum expected sizes - no upper bounds to allow for growth
+      // Verify expected sizes with reasonable ranges
       const expectedSizes = [
-        { path: path.join(SHARED_SRC, 'projectManager.ts'), min: 700 },
-        { path: path.join(SHARED_SRC, 'validation.ts'), min: 150 },
-        { path: path.join(SHARED_SRC, 'types/agent.ts'), min: 40 },
+        { path: path.join(SHARED_SRC, 'projectManager.ts'), min: 700, max: 1000 },
+        { path: path.join(SHARED_SRC, 'validation.ts'), min: 150, max: 250 },
+        { path: path.join(SHARED_SRC, 'types/agent.ts'), min: 40, max: 80 },
       ];
 
       for (const file of expectedSizes) {
@@ -549,6 +548,7 @@ describe('Non-Invasive Architecture Validation - Story 5.1', () => {
           const content = readFileSync(file.path, 'utf-8');
           const lineCount = content.split('\n').length;
           expect(lineCount).toBeGreaterThanOrEqual(file.min);
+          expect(lineCount).toBeLessThanOrEqual(file.max);
         }
       }
     });

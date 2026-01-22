@@ -33,12 +33,7 @@ export class Validators {
     try {
       const resolved = path.resolve(projectPath);
 
-      // MED-3: Path traversal protection - require absolute paths after resolution
-      // This prevents relative path traversal like ../../../etc/passwd
-      if (!path.isAbsolute(resolved)) {
-        return false;
-      }
-
+      // Security: Verify the path exists and is a directory
       const stats = await fs.stat(resolved);
       return stats.isDirectory();
     } catch (error) {

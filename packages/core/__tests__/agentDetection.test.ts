@@ -82,9 +82,9 @@ describe('extractAgentId()', () => {
 
     const result = extractAgentId(req, mockLogger);
     expect(result).toBeUndefined();
-    expect(mockLogger.warn).toHaveBeenCalledWith(
-      { agentId: '00000000-0000-1000-8000-000000000000' },
-      'Invalid agent ID format in system prompt'
+    // Story 5.2 AC3: Invalid agent IDs log at debug level (expected scenario)
+    expect(mockLogger.debug).toHaveBeenCalledWith(
+      'Invalid agent ID format: 00000000-0000-1000-8000-000000000000'
     );
   });
 
@@ -217,9 +217,9 @@ describe('extractAgentId()', () => {
 
     const result = extractAgentId(req, mockLogger);
     expect(result).toBeUndefined();
-    expect(mockLogger.warn).toHaveBeenCalledWith(
-      { agentId: '550e8400-e29b-51d4-a716-446655440000' },
-      'Invalid agent ID format in system prompt'
+    // Story 5.2 AC3: Invalid agent IDs log at debug level (expected scenario)
+    expect(mockLogger.debug).toHaveBeenCalledWith(
+      'Invalid agent ID format: 550e8400-e29b-51d4-a716-446655440000'
     );
   });
 
@@ -370,7 +370,8 @@ describe('Story 2.3: Router.default Fallback', () => {
 
     const result = extractAgentId(req, mockLogger);
     expect(result).toBeUndefined();
-    expect(mockLogger.warn).toHaveBeenCalled();
+    // Story 5.2 AC3: Invalid agent IDs log at debug level (expected scenario)
+    expect(mockLogger.debug).toHaveBeenCalled();
     // Malformed IDs should fallback to Router.default (graceful degradation)
   });
 
