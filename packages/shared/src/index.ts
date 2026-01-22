@@ -15,3 +15,9 @@ export * from './preset/readPreset';
 export * from './preset/schema';
 export * from './preset/marketplace';
 
+// Export UI message formatting utilities (Story 5.4)
+export * from './ui/messages';
+
+// Export logging utilities (Story 5.4)
+export * from './logging/logger';
+

@@ -1,15 +1,16 @@
-import { ProjectManager, Validators, PROJECTS_FILE } from '@CCR/shared';
+import { ProjectManager, Validators, PROJECTS_FILE,
+  formatProjectAddedSuccess,
+  formatConfigurationSuccess,
+  formatError,
+  formatProjectList,
+  formatScanResult,
+  formatHelpText,
+  colors
+} from '@CCR/shared';
 import path from 'path';
 import type { RescanResult, AgentConfig } from '@CCR/shared';
 import { interactiveModelConfiguration, getAvailableModels, VALUE_DEFAULT, ConfigurationSession } from '../interactive/modelConfig';
 import { confirm, select } from '@inquirer/prompts';
-
-// ANSI color codes for consistent output
-const RESET = "\x1B[0m";
-const DIM = "\x1B[2m";
-const GREEN = "\x1B[32m";
-const YELLOW = "\x1B[33m";
-const RED = "\x1B[31m";
 
 /**
  * Handle project commands
@@ -19,22 +20,7 @@ export async function handleProjectCommand(args: string[]): Promise<void> {
   const subCommand = args[0];
 
   if (!subCommand || subCommand === '--help' || subCommand === '-h') {
-    console.log('Usage: ccr project <command> [options]');
-    console.log('\nCommands:');
-    console.log('  add <path>       Register a new project');
-    console.log('  list             List all registered projects');
-    console.log('  scan <id>        Rescan project for new or deleted agents');
-    console.log('  configure <id>   Configure agent models interactively');
-    console.log('\nGit-Based Configuration Sharing:');
-    console.log('  Projects are stored in ~/.claude-code-router/projects.json');
-    console.log('  This file is safe to commit to git (contains no API keys)');
-    console.log('  Share configurations with your team via version control');
-    console.log('  Team members receive agent routing on git pull (zero-config)');
-    console.log('\nExamples:');
-    console.log('  ccr project add /home/user/my-project');
-    console.log('  ccr project configure <project-id>');
-    console.log('  git add ~/.claude-code-router/projects.json');
-    console.log('  git commit -m "Configure agent models"');
+    console.log(formatHelpText());
     return;
   }
 
@@ -60,15 +46,21 @@ export async function handleProjectCommand(args: string[]): Promise<void> {
 
 /**
  * Handle 'project add' command (Story 1.2: Updated to display discovered agents with UUIDs)
+ * Story 5.4: Refactored to use formatProjectAddedSuccess and formatError
  * @param args - Command arguments (e.g., ['/path/to/project'])
  */
 async function handleProjectAdd(args: string[]): Promise<void> {
   const projectPath = args[0];
 
   if (!projectPath) {
-    console.error('Error: Project path is required');
-    console.error('\nUsage: ccr project add <path>');
-    console.error('\nExample: ccr project add /home/user/my-project');
+    console.error(formatError('Project path is required', {
+      operation: 'ccr project add',
+      input: '<path>',
+      troubleshooting: [
+        'Provide the path to the project directory',
+        'Example: ccr project add /home/user/my-project',
+      ],
+    }));
     process.exit(1);
   }
 
@@ -78,100 +70,66 @@ async function handleProjectAdd(args: string[]): Promise<void> {
   // Validate project path
   const isValid = await Validators.isValidProjectPath(resolvedPath);
   if (!isValid) {
-    console.error(`✗ Error: Invalid project path: ${resolvedPath}\n`);
-    console.error('  Troubleshooting:');
-    console.error('  - Verify the path exists and is accessible');
-    console.error('  - Ensure the path points to a valid directory');
-    console.error('  - Note: Agents will be auto-discovered from .bmad/bmm/agents/*.md');
-    console.error('  - Check file permissions\n');
-    console.error('  Get help: ccr project --help');
+    console.error(formatError(`Invalid project path: ${resolvedPath}`, {
+      operation: 'ccr project add',
+      input: resolvedPath,
+      troubleshooting: [
+        'Verify the path exists and is accessible',
+        'Ensure the path points to a valid directory',
+        'Note: Agents will be auto-discovered from .bmad/bmm/agents/*.md',
+        'Check file permissions',
+      ],
+    }));
     process.exit(1);
   }
 
-  // Create project manager and add project
-  // Story 1.2: addProject() now automatically scans and injects UUIDs
-  const pm = new ProjectManager(PROJECTS_FILE);
-  const result = await pm.addProject(resolvedPath);
+  try {
+    // Create project manager and add project
+    // Story 1.2: addProject() now automatically scans and injects UUIDs
+    const pm = new ProjectManager(PROJECTS_FILE);
+    const result = await pm.addProject(resolvedPath);
 
-  // Story 1.2: Display discovered agents with injected UUIDs
-  console.log(`✓ Project added: ${result.name} (${result.id})`);
-  console.log(`  Path: ${result.path}`);
-  console.log(`  Agents discovered: ${result.agents.length}`);
-
-  if (result.agents.length > 0) {
-    console.log('\n  Agents with injected UUIDs:');
-    for (const agent of result.agents) {
-      console.log(`  ├─ ${agent.name} → CCR-AGENT-ID: ${agent.id}`);
-    }
+    // Story 5.4: Display using formatProjectAddedSuccess
+    console.log(formatProjectAddedSuccess(result));
+  } catch (error) {
+    const errorMsg = (error as Error).message;
+    console.error(formatError(errorMsg, {
+      operation: 'ccr project add',
+      input: resolvedPath,
+    }));
+    process.exit(1);
   }
-
-  // Story 2.4: Git workflow hint for team collaboration
-  console.log('\n  Next steps:');
-  console.log('  • Configure agent models: ccr project configure ' + result.id);
-  console.log('  • Commit and push to share with your team:');
-  console.log('      git add ~/.claude-code-router/projects.json');
-  console.log('      git commit -m "Add project: ' + result.name + '"');
-  console.log('  • Team members will receive configuration on git pull');
 }
 
 /**
  * Handle 'project list' command (Story 1.3: Display all registered projects with agents)
+ * Story 5.4: Refactored to use formatProjectList
  */
 async function handleProjectList(): Promise<void> {
   const pm = new ProjectManager(PROJECTS_FILE);
   const projects = await pm.listProjects();
 
-  // AC#3: Display helpful message for empty projects
-  if (!projects || projects.length === 0) {
-    console.log('No projects registered. Add a project with: ccr project add <path>');
-    return;
-  }
-
-  // AC#1, #2, #5: Display formatted project list
-  console.log(`\n📦 Registered Projects (${projects.length})\n`);
-
-  projects.forEach((project, index) => {
-    console.log(`${index + 1}. ${project.name}`);
-    console.log(`   ID: ${project.id}`);
-    console.log(`   Path: ${project.path}`);
-    console.log(`   Agents: ${project.agents.length}`);
-
-    // AC#2: Display agent-to-model mappings
-    if (project.agents.length > 0) {
-      console.log(`   Agent Details:`);
-      project.agents.forEach((agent, i) => {
-        // Show [default] for all agents in Epic 1 (model configuration in Epic 2)
-        // AC#2: Use configured model if available, otherwise default
-        const model = (agent as any).model || '[default]';
-        const isLast = i === project.agents.length - 1;
-        const prefix = isLast ? '   └─' : '   ├─';
-        console.log(`${prefix} ${agent.name} → ${model}`);
-        console.log(`      CCR-AGENT-ID: ${agent.id}`);
-      });
-    }
-    console.log(''); // Separator between projects (AC#5)
-  });
+  // Story 5.4: Display using formatProjectList
+  console.log(formatProjectList(projects || []));
 }
 
 /**
  * Handle 'project scan' command (Story 1.4: Rescan project for new or deleted agents)
+ * Story 5.4: Refactored to use formatScanResult and formatError
  * @param args - Command arguments (e.g., ['<project-id>'])
  */
-/**
- * Helper function to determine if spacing is needed between result sections
- * @param hasMoreSections - Whether there are more sections to display after current one
- */
-function shouldAddSpacing(hasMoreSections: boolean): boolean {
-  return hasMoreSections;
-}
-
 export async function handleProjectScan(args: string[]): Promise<void> {
   const projectId = args[0];
 
   if (!projectId) {
-    console.error('✗ Error: Project ID required');
-    console.error('\nUsage: ccr project scan <project-id>');
-    console.error('\nList projects: ccr project list');
+    console.error(formatError('Project ID required', {
+      operation: 'ccr project scan',
+      input: '<project-id>',
+      troubleshooting: [
+        'Provide the project ID to scan',
+        'List available projects: ccr project list',
+      ],
+    }));
     process.exit(1);
   }
 
@@ -180,9 +138,14 @@ export async function handleProjectScan(args: string[]): Promise<void> {
   try {
     // AC2: Validate project ID format before processing
     if (!Validators.isValidAgentId(projectId)) {
-      console.error(`✗ Error: Invalid project ID: ${projectId}`);
-      console.error('\nProject ID must be a valid UUID v4 format');
-      console.error('List available projects: ccr project list');
+      console.error(formatError(`Invalid project ID: ${projectId}`, {
+        operation: 'ccr project scan',
+        input: projectId,
+        troubleshooting: [
+          'Project ID must be a valid UUID v4 format',
+          'List available projects: ccr project list',
+        ],
+      }));
       process.exit(1);
     }
 
@@ -198,44 +161,8 @@ export async function handleProjectScan(args: string[]): Promise<void> {
       throw new Error('Invalid rescan result structure returned from ProjectManager');
     }
 
-    // AC1, AC4: Display scan summary
-    if (result.newAgents.length === 0 && result.deletedAgents.length === 0 && result.failedAgents.length === 0) {
-      console.log('✓ No changes detected. All agents up to date.');
-    } else {
-      console.log('\n✓ Project rescan complete:\n');
-
-      if (result.newAgents.length > 0) {
-        console.log(`  Found ${result.newAgents.length} new agent(s):`);
-        result.newAgents.forEach((name, idx) => {
-          const isLast = idx === result.newAgents.length - 1 && result.deletedAgents.length === 0 && result.failedAgents.length === 0;
-          console.log(`  ${isLast ? '└─' : '├─'} ${name}`);
-        });
-        if (shouldAddSpacing(result.deletedAgents.length > 0 || result.failedAgents.length > 0)) {
-          console.log('');
-        }
-      }
-
-      if (result.deletedAgents.length > 0) {
-        console.log(`  Removed ${result.deletedAgents.length} deleted agent(s):`);
-        result.deletedAgents.forEach((agent, idx) => {
-          const isLast = idx === result.deletedAgents.length - 1 && result.failedAgents.length === 0;
-          console.log(`  ${isLast ? '└─' : '├─'} ${agent.name}`);
-        });
-        if (shouldAddSpacing(result.failedAgents.length > 0)) {
-          console.log('');
-        }
-      }
-
-      if (result.failedAgents.length > 0) {
-        console.log(`  ${result.failedAgents.length} agent(s) failed to process:`);
-        result.failedAgents.forEach((name, idx) => {
-          const isLast = idx === result.failedAgents.length - 1;
-          console.log(`  ${isLast ? '└─' : '├─'} ${name}`);
-        });
-      }
-
-      console.log(`\n  Total agents: ${result.totalAgents}`);
-    }
+    // Story 5.4: Display using formatScanResult
+    console.log(formatScanResult(result));
 
     // Story 4.3: Prompt for configuration when new agents detected
     if (result.newAgents.length > 0) {
@@ -273,13 +200,10 @@ export async function handleProjectScan(args: string[]): Promise<void> {
     }
   } catch (error) {
     const errorMsg = (error as Error).message;
-    console.error(`✗ Error: ${errorMsg}`);
-
-    // AC3: Provide helpful guidance for project not found errors
-    if (errorMsg.includes('Project not found') || errorMsg.includes('Invalid project ID')) {
-      console.log('\nList available projects: ccr project list');
-    }
-    // AC3: Exit with non-zero status code on error
+    console.error(formatError(errorMsg, {
+      operation: 'ccr project scan',
+      input: projectId,
+    }));
     process.exit(1);
   }
 }
@@ -298,7 +222,7 @@ async function configureNewAgentsInteractive(
 ): Promise<void> {
   const pm = new ProjectManager(PROJECTS_FILE);
 
-  console.log(`${GREEN}\nConfiguring new agents...${RESET}`);
+  console.log(colors.green('\nConfiguring new agents...'));
 
   // Bulk configuration option for 5+ agents (from Dev Notes)
   let applySameModelToAll = false;
@@ -333,17 +257,17 @@ async function configureNewAgentsInteractive(
 
         // Validate bulk model selection
         if (bulkModel !== undefined && !Validators.isValidModelString(bulkModel)) {
-          console.error(`${RED}✗ Invalid model format: ${bulkModel}${RESET}`);
-          console.log(`${DIM}  Model must be in format: provider,modelname${RESET}`);
+          console.error(colors.red(`✗ Invalid model format: ${bulkModel}`));
+          console.log(colors.dim('  Model must be in format: provider,modelname'));
           applySameModelToAll = false; // Fall back to individual configuration
         } else {
           const modelDisplay = bulkModel || '[default]';
-          console.log(`${GREEN}✓ Applying ${modelDisplay} to all ${newAgents.length} agents${RESET}`);
+          console.log(colors.green(`✓ Applying ${modelDisplay} to all ${newAgents.length} agents`));
         }
       }
     } catch (error: any) {
       if (error.name === 'ExitPromptError') {
-        console.log(`${YELLOW}\nConfiguration interrupted${RESET}`);
+        console.log(colors.yellow('\nConfiguration interrupted'));
         return;
       }
       throw error;
@@ -381,9 +305,9 @@ async function configureNewAgentsInteractive(
 
         // Validate model before adding to session (AC3)
         if (actualModel !== undefined && !Validators.isValidModelString(actualModel)) {
-          console.error(`${RED}✗ Invalid model format: ${actualModel}${RESET}`);
-          console.log(`${DIM}  Model must be in format: provider,modelname${RESET}`);
-          console.log(`${DIM}  Skipping ${agent.name}${RESET}`);
+          console.error(colors.red(`✗ Invalid model format: ${actualModel}`));
+          console.log(colors.dim('  Model must be in format: provider,modelname'));
+          console.log(colors.dim(`  Skipping ${agent.name}`));
           continue;
         }
 
@@ -392,11 +316,11 @@ async function configureNewAgentsInteractive(
 
         // Show confirmation (AC3)
         const modelDisplay = actualModel || '[default]';
-        console.log(`${GREEN}✓ ${agent.name} → ${modelDisplay}${RESET}`);
+        console.log(colors.green(`✓ ${agent.name} → ${modelDisplay}`));
 
       } catch (error: any) {
         if (error.name === 'ExitPromptError') {
-          console.log(`${YELLOW}\nConfiguration interrupted, no changes saved${RESET}`);
+          console.log(colors.yellow('\nConfiguration interrupted, no changes saved'));
           return;
         }
         throw error;
@@ -410,42 +334,62 @@ async function configureNewAgentsInteractive(
       await session.save(projectId);
       const savedCount = session.getSavedCount();
 
-      // Display configuration summary (AC4)
-      console.log(`${GREEN}\n✓ Configured ${savedCount} new agent(s):${RESET}`);
+      // Build configured agents array for formatting
+      const configuredAgents: AgentConfig[] = [];
       for (const line of session.getSummary()) {
-        console.log(`${DIM}${line}${RESET}`);
+        // Parse line format: "agent-name (id) → model"
+        const match = line.match(/^(.+) \(([^)]+)\) → (.+)$/);
+        if (match) {
+          configuredAgents.push({
+            name: match[1],
+            id: match[2],
+            model: match[3] === '[default]' ? undefined : match[3],
+          });
+        }
       }
+
+      // Story 5.4: Display using formatConfigurationSuccess
+      console.log(`\n${formatConfigurationSuccess(configuredAgents)}`);
 
       // Show total agents (AC4)
       const project = await pm.getProject(projectId);
       if (project) {
-        console.log(`\n${DIM}Total agents: ${project.agents.length}${RESET}`);
+        console.log(`\n${colors.dim(`Total agents: ${project.agents.length}`)}`);
       }
-
-      // Git workflow guidance (AC4)
-      console.log(`\n${DIM}Commit projects.json to share configuration with team${RESET}`);
     } catch (error) {
       const errorMsg = (error as Error).message;
-      console.error(`${RED}✗ Error saving configuration: ${errorMsg}${RESET}`);
-      console.error(`${DIM}  ${session.getCount()} agent(s) configured but not saved${RESET}`);
+      console.error(formatError(`Error saving configuration: ${errorMsg}`, {
+        operation: 'ccr project configure',
+        troubleshooting: [
+          `${session.getCount()} agent(s) configured but not saved`,
+          'Check file permissions for ~/.claude-code-router/',
+          'Ensure projects.json is not corrupted',
+        ],
+      }));
       throw error;
     }
   } else {
-    console.log(`${DIM}\nNo changes to save${RESET}`);
+    console.log(colors.dim('\nNo changes to save'));
   }
 }
 
 /**
  * Handle 'project configure' command (Story 2.2: Interactive CLI model assignment)
+ * Story 5.4: Refactored to use formatError
  * @param args - Command arguments (e.g., ['<project-id>'])
  */
 async function handleProjectConfigure(args: string[]): Promise<void> {
   const projectId = args[0];
 
   if (!projectId) {
-    console.error('✗ Error: Project ID required');
-    console.error('\nUsage: ccr project configure <project-id>');
-    console.error('\nList projects: ccr project list');
+    console.error(formatError('Project ID required', {
+      operation: 'ccr project configure',
+      input: '<project-id>',
+      troubleshooting: [
+        'Provide the project ID to configure',
+        'List available projects: ccr project list',
+      ],
+    }));
     process.exit(1);
   }
 

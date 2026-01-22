@@ -1,0 +1,80 @@
+// Jest Snapshot v1, https://jestjs.io/docs/snapshot-testing
+
+exports[`Story 5.4: CLI Feedback & Error Messages Snapshot Tests Snapshot: Configuration success message 1`] = `
+"✓ Configured 2 agent(s):
+  +-- agent1.md → openai,gpt-4o
+  +-- agent2.md → [default]
+
+Commit projects.json to share configuration with team"
+`;
+
+exports[`Story 5.4: CLI Feedback & Error Messages Snapshot Tests Snapshot: Error message format 1`] = `
+"✗ Error: ENOENT: no such file or directory
+
+  Troubleshooting:
+  - Verify the path exists and is accessible
+  - Ensure the path points to a valid directory
+  - Note: Agents will be auto-discovered from .bmad/bmm/agents/*.md
+
+  Get help: ccr project --help"
+`;
+
+exports[`Story 5.4: CLI Feedback & Error Messages Snapshot Tests Snapshot: Help text output 1`] = `
+"Usage: ccr project <command> [options]
+
+Commands:
+  add <path>       Register a new project
+  list             List all registered projects
+  scan <id>        Rescan project for new or deleted agents
+  configure <id>   Configure agent models interactively
+
+Git-Based Configuration Sharing:
+  Projects are stored in ~/.claude-code-router/projects.json
+  This file is safe to commit to git (contains no API keys)
+  Share configurations with your team via version control
+  Team members receive agent routing on git pull (zero-config)
+
+Examples:
+  ccr project add /home/user/my-project
+  ccr project configure <project-id>
+  git add ~/.claude-code-router/projects.json
+  git commit -m "Configure agent models"
+
+Documentation: https://github.com/musistudio/claude-code-router"
+`;
+
+exports[`Story 5.4: CLI Feedback & Error Messages Snapshot Tests Snapshot: Project add success message 1`] = `
+"✓ Project added: test-project (123e4567-e89b-12d3-a456-426614174000)
+  Path: /home/user/test-project
+  Agents discovered: 2
+
+  Agents with injected UUIDs:
+  +-- agent1.md → CCR-AGENT-ID: 11111111-1111-1111-1111-111111111111
+  +-- agent2.md → CCR-AGENT-ID: 22222222-2222-2222-2222-222222222222
+
+  Next steps:
+  • Configure agent models: ccr project configure 123e4567-e89b-12d3-a456-426614174000
+  • Commit and push to share with your team:
+      git add ~/.claude-code-router/projects.json
+      git commit -m "Add project: test-project"
+  • Team members will receive configuration on git pull"
+`;
+
+exports[`Story 5.4: CLI Feedback & Error Messages Snapshot Tests Snapshot: Project list output 1`] = `
+"
+📦 Registered Projects (2)
+
+1. project1
+   ID: 111-111
+   Path: /home/user/project1
+   Agents: 1
+   Agent Details:
+   └─ agent1.md → openai,gpt-4o
+      CCR-AGENT-ID: aaa-aaa
+
+2. project2
+   ID: 222-222
+   Path: /home/user/project2
+   Agents: 0
+"
+`;
