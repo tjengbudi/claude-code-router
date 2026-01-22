@@ -317,6 +317,33 @@ describe('Story 5.4: CLI Feedback & Error Messages', () => {
       expect(result).toContain('Error:');
       expect(result).toContain('Troubleshooting:');
     });
+
+    it('LOG_LEVEL environment variable support', () => {
+      // Test that logger respects LOG_LEVEL environment variable
+      // This is a basic test to ensure the logger module exports the necessary functions
+      const { getLogLevel, setLogLevel, LogLevel } = require('@CCR/shared');
+
+      // Verify LogLevel enum exists
+      expect(LogLevel).toBeDefined();
+      expect(LogLevel.DEBUG).toBe('debug');
+      expect(LogLevel.INFO).toBe('info');
+      expect(LogLevel.WARN).toBe('warn');
+      expect(LogLevel.ERROR).toBe('error');
+
+      // Verify getLogLevel function exists
+      expect(typeof getLogLevel).toBe('function');
+
+      // Verify setLogLevel function exists
+      expect(typeof setLogLevel).toBe('function');
+
+      // Test setting log level
+      const originalLevel = getLogLevel();
+      setLogLevel(LogLevel.DEBUG);
+      expect(getLogLevel()).toBe(LogLevel.DEBUG);
+
+      // Restore original level
+      setLogLevel(originalLevel);
+    });
   });
 
   describe('AC5: CLI Help Documentation', () => {

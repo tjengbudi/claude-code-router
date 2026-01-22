@@ -6,6 +6,7 @@ import { glob } from 'glob';
 import type { ProjectConfig, ProjectsData, AgentConfig, RescanResult } from './types/agent';
 import { AGENT_ID_REGEX, PROJECTS_SCHEMA_VERSION } from './constants';
 import { Validators } from './validation';
+import { createLogger } from './logging/logger';
 
 /**
  * Agent ID tag pattern for injection into markdown files
@@ -14,9 +15,11 @@ const AGENT_ID_TAG_PATTERN = '<!-- CCR-AGENT-ID: %s -->';
 
 /**
  * ProjectManager - Manages CCR project registration and metadata
+ * Story 5.4: Integrated with logger for debugging operations
  */
 export class ProjectManager {
   private projectsFile: string;
+  private logger = createLogger('ProjectManager');
 
   constructor(projectsFile: string) {
     this.projectsFile = projectsFile;
@@ -37,14 +40,14 @@ export class ProjectManager {
         if (data.schemaVersion !== PROJECTS_SCHEMA_VERSION) {
           // Schema version mismatch - log warning but attempt to load anyway
           // This allows forward compatibility (newer versions) and backward compatibility (older versions)
-          console.warn(
+          this.logger.warn(
             `Schema version mismatch: expected ${PROJECTS_SCHEMA_VERSION}, found ${data.schemaVersion}. ` +
             `Attempting compatibility mode.`
           );
         }
       } else {
         // No schema version - this is a pre-Story 2.4 projects.json file
-        console.debug(
+        this.logger.debug(
           `projects.json has no schema version (pre-Story 2.4 format). ` +
           `Current version is ${PROJECTS_SCHEMA_VERSION}. Loading with backward compatibility.`
         );
@@ -52,7 +55,7 @@ export class ProjectManager {
 
       // Story 5.2 AC2: Validate structure using Validators.isValidProjectsData()
       if (!Validators.isValidProjectsData(data)) {
-        console.warn('projects.json has invalid schema, returning empty projects');
+        this.logger.warn('projects.json has invalid schema, returning empty projects');
         return { projects: {} };
       }
 
@@ -62,18 +65,18 @@ export class ProjectManager {
 
       // Story 5.2 AC1: Handle missing file (ENOENT) with debug level
       if (errorCode === 'ENOENT') {
-        console.debug(`projects.json not found at ${this.projectsFile}, agent system inactive`);
+        this.logger.debug(`projects.json not found at ${this.projectsFile}, agent system inactive`);
         return { projects: {} };
       }
 
       // Story 5.2 AC2: Handle corrupted JSON with warn level
       if (error instanceof SyntaxError) {
-        console.warn(`Failed to load projects.json: ${(error as Error).message}`);
+        this.logger.warn(`Failed to load projects.json: ${(error as Error).message}`);
         return { projects: {} };
       }
 
       // Other unexpected errors - still return empty but log at error level
-      console.error(`Unexpected error loading projects.json: ${(error as Error).message}`);
+      this.logger.error(`Unexpected error loading projects.json: ${(error as Error).message}`);
       return { projects: {} };
     }
   }
@@ -220,9 +223,12 @@ ${JSON5.stringify(dataWithVersion, { space: 2 })}`;
    * @throws Error if project already exists or UUID generation fails
    */
   async addProject(projectPath: string): Promise<ProjectConfig> {
+    this.logger.info(`Adding project: ${projectPath}`);
+
     // Generate and validate UUID (NFR-S3)
     const id = uuidv4();
     if (!uuidValidate(id) || !AGENT_ID_REGEX.test(id)) {
+      this.logger.error(`Invalid UUID generated: ${id}`);
       throw new Error(`Invalid UUID generated: ${id}`);
     }
 
@@ -233,12 +239,14 @@ ${JSON5.stringify(dataWithVersion, { space: 2 })}`;
     const data = await this.loadProjects();
     for (const [existingId, existingProject] of Object.entries(data.projects)) {
       if (existingProject.path === projectPath) {
+        this.logger.warn(`Project already registered: ${projectPath} with ID: ${existingId}`);
         throw new Error(`Project already registered with ID: ${existingId}`);
       }
     }
 
     // HIGH-1: Discover agents and store them in project config
     const agents = await this.discoverAgents(projectPath);
+    this.logger.info(`Discovered ${agents.length} agents in project: ${name}`);
 
     const projectConfig: ProjectConfig = {
       id,
@@ -251,6 +259,8 @@ ${JSON5.stringify(dataWithVersion, { space: 2 })}`;
 
     data.projects[id] = projectConfig;
     await this.saveProjects(data);
+
+    this.logger.info(`Project added successfully: ${name} (${id})`);
 
     return projectConfig;
   }
@@ -273,7 +283,7 @@ ${JSON5.stringify(dataWithVersion, { space: 2 })}`;
       // If glob fails (e.g., permission issues, invalid path), return empty array
       // This allows the system to gracefully handle projects without agent directories
       if ((error as NodeJS.ErrnoException).code === 'EACCES' || (error as NodeJS.ErrnoException).code === 'EPERM') {
-        console.warn(`Warning: Permission denied accessing agent directory: ${agentsPattern}`);
+        this.logger.warn(`Permission denied accessing agent directory: ${agentsPattern}`);
       }
       return [];
     }
@@ -292,7 +302,7 @@ ${JSON5.stringify(dataWithVersion, { space: 2 })}`;
       } catch (error) {
         // Log error but continue processing other agents
         const errorMsg = (error as Error).message;
-        console.warn(`Warning: Failed to process agent file ${agentFile}: ${errorMsg}`);
+        this.logger.warn(`Failed to process agent file ${agentFile}: ${errorMsg}`);
         return null;
       }
     });
@@ -388,8 +398,11 @@ ${JSON5.stringify(dataWithVersion, { space: 2 })}`;
    * @throws Error if project ID is invalid or project not found
    */
   async rescanProject(projectId: string): Promise<RescanResult> {
+    this.logger.info(`Rescanning project: ${projectId}`);
+
     // AC4: Validate project ID using Validators.isValidAgentId()
     if (!Validators.isValidAgentId(projectId)) {
+      this.logger.error(`Invalid project ID format: ${projectId}`);
       throw new Error(`Invalid project ID: ${projectId}`);
     }
 
@@ -398,6 +411,7 @@ ${JSON5.stringify(dataWithVersion, { space: 2 })}`;
     const project = data.projects[projectId];
 
     if (!project) {
+      this.logger.error(`Project not found: ${projectId}`);
       throw new Error(`Project not found: ${projectId}`);
     }
 
@@ -411,7 +425,7 @@ ${JSON5.stringify(dataWithVersion, { space: 2 })}`;
     } catch (error) {
       // If glob fails (permission issues, etc.), return no changes
       if ((error as NodeJS.ErrnoException).code === 'EACCES' || (error as NodeJS.ErrnoException).code === 'EPERM') {
-        console.warn(`Warning: Permission denied accessing agent directory: ${agentDir}`);
+        this.logger.warn(`Permission denied accessing agent directory: ${agentDir}`);
       }
       filesystemAgentFiles = [];
     }
@@ -449,7 +463,7 @@ ${JSON5.stringify(dataWithVersion, { space: 2 })}`;
         // Check for duplicates before adding (prevent race conditions)
         const exists = project.agents.some(a => a.id === agentId || a.name === filename);
         if (exists) {
-          console.warn(`Warning: Agent ${filename} (${agentId}) already exists, skipping`);
+          this.logger.warn(`Agent ${filename} (${agentId}) already exists, skipping`);
           continue;
         }
 

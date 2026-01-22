@@ -247,7 +247,7 @@ const getUseModel = async (
             if (cachedModel) {
               // Story 3.2: Track cache hit metric
               cacheMetrics.hits++;
-              req.log.debug({ cacheKey, model: cachedModel }, 'Agent model cache hit');
+              // Story 5.4 AC4: Cache operations should NOT be logged at debug level
               // Story 3.6: Record total routing latency before return
               performanceMonitoring.record('totalRouting', performance.now() - routingStart);
               return { model: cachedModel, scenarioType: 'default' };
@@ -264,7 +264,7 @@ const getUseModel = async (
             cacheMetrics.misses++;
             try {
               sessionAgentModelCache.set(cacheKey, agentModel);
-              req.log.debug({ cacheKey, model: agentModel }, 'Agent model cache miss, stored');
+              // Story 5.4 AC4: Cache operations should NOT be logged at debug level
             } catch (cacheError) {
               req.log.warn({ error: (cacheError as Error).message, cacheKey }, 'Cache set operation failed, continuing without caching');
             }
