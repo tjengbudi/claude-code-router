@@ -488,7 +488,7 @@ describe('Graceful Degradation - Story 5.2', () => {
 
       await pm.loadProjects();
 
-      expect(debugSpy).toHaveBeenCalledWith('projects.json not found, agent system inactive');
+      expect(debugSpy).toHaveBeenCalledWith(`projects.json not found at ${TEST_PROJECTS_FILE}, agent system inactive`);
       debugSpy.mockRestore();
     });
 

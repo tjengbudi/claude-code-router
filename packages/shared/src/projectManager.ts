@@ -62,7 +62,7 @@ export class ProjectManager {
 
       // Story 5.2 AC1: Handle missing file (ENOENT) with debug level
       if (errorCode === 'ENOENT') {
-        console.debug(`projects.json not found, agent system inactive`);
+        console.debug(`projects.json not found at ${this.projectsFile}, agent system inactive`);
         return { projects: {} };
       }
 
