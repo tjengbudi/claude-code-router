@@ -146,6 +146,12 @@ export async function migrateFromCcrCustom(
       result.agentsMigrated += agentsArray.length;
     }
 
+    // Warn if no projects found
+    if (result.projectsMigrated === 0) {
+      logger.warn('No projects found in ccr-custom configuration');
+      result.errors.push('No projects found to migrate');
+    }
+
     // Step 3: Migrate CCR-AGENT-MODEL tags from agent files to projects.json
     logger.info('Migrating CCR-AGENT-MODEL tags from agent files');
     let tagsFoundInDryRun = 0;
@@ -173,7 +179,8 @@ export async function migrateFromCcrCustom(
             const modelFromFile = modelMatch[1].trim();
 
             // Only set if agent doesn't already have a model (projects.json wins)
-            if (!agent.model && modelFromFile !== '' && modelFromFile !== 'default') {
+            // Validate model is not empty or whitespace-only
+            if (!agent.model && modelFromFile.length > 0 && modelFromFile !== 'default') {
               agent.model = modelFromFile;
               result.modelsMigrated++;
             }
@@ -320,17 +327,26 @@ export async function isAlreadyMigrated(projectsJsonPath: string): Promise<boole
 }
 
 /**
+ * Migration preview data interface
+ */
+export interface MigrationPreviewData {
+  sourcePath: string;
+  totalProjects: number;
+  totalAgents: number;
+  agentsWithModels: number;
+  agentsWithTags: number;
+  error?: string;
+}
+
+/**
  * Get migration preview without modifying files
  * @param sourcePath - Path to ccr-custom projects.json
- * @returns Preview string showing what will be migrated
+ * @returns Preview data with statistics
  */
-export async function getMigrationPreview(sourcePath: string): Promise<string> {
+export async function getMigrationPreview(sourcePath: string): Promise<MigrationPreviewData> {
   try {
     const content = await fs.readFile(sourcePath, 'utf-8');
     const data = JSON.parse(content) as CcrCustomProjectsData;
-
-    let preview = '\n=== Migration Preview ===\n';
-    preview += `Source: ${sourcePath}\n\n`;
 
     let totalProjects = 0;
     let totalAgents = 0;
@@ -358,19 +374,47 @@ export async function getMigrationPreview(sourcePath: string): Promise<string> {
       }
     }
 
-    preview += `Projects to migrate: ${totalProjects}\n`;
-    preview += `Total agents: ${totalAgents}\n`;
-    preview += `Agents with model in projects.json: ${agentsWithModels}\n`;
-    preview += `Agents with CCR-AGENT-MODEL tags: ${agentsWithTags}\n`;
-    preview += '\nTransformations:\n';
-    preview += '  - agents: Record → Array\n';
-    preview += '  - Add: createdAt, updatedAt timestamps\n';
-    preview += '  - Add: schemaVersion "1.0.0"\n';
-    preview += '  - Remove: CCR-AGENT-MODEL tags from agent files\n';
-    preview += '\n';
-
-    return preview;
+    return {
+      sourcePath,
+      totalProjects,
+      totalAgents,
+      agentsWithModels,
+      agentsWithTags
+    };
   } catch (error) {
-    return `Preview failed: ${(error as Error).message}`;
+    return {
+      sourcePath,
+      totalProjects: 0,
+      totalAgents: 0,
+      agentsWithModels: 0,
+      agentsWithTags: 0,
+      error: (error as Error).message
+    };
   }
+}
+
+/**
+ * Format migration preview data as string
+ * @param previewData - Migration preview data
+ * @returns Formatted preview string
+ */
+export function formatMigrationPreview(previewData: MigrationPreviewData): string {
+  if (previewData.error) {
+    return `Preview failed: ${previewData.error}`;
+  }
+
+  let preview = '\n=== Migration Preview ===\n';
+  preview += `Source: ${previewData.sourcePath}\n\n`;
+  preview += `Projects to migrate: ${previewData.totalProjects}\n`;
+  preview += `Total agents: ${previewData.totalAgents}\n`;
+  preview += `Agents with model in projects.json: ${previewData.agentsWithModels}\n`;
+  preview += `Agents with CCR-AGENT-MODEL tags: ${previewData.agentsWithTags}\n`;
+  preview += '\nTransformations:\n';
+  preview += '  - agents: Record → Array\n';
+  preview += '  - Add: createdAt, updatedAt timestamps\n';
+  preview += '  - Add: schemaVersion "1.0.0"\n';
+  preview += '  - Remove: CCR-AGENT-MODEL tags from agent files\n';
+  preview += '\n';
+
+  return preview;
 }

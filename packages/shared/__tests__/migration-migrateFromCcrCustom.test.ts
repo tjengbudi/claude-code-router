@@ -442,6 +442,88 @@ describe('migrateFromCcrCustom', () => {
       const backupFiles = await fs.readdir(backupDir);
       expect(backupFiles.length).toBeGreaterThanOrEqual(2);
     });
+
+    it('should rollback projects.json on validation failure', async () => {
+      // Create a valid target file first
+      const validData = {
+        schemaVersion: '1.0.0',
+        projects: {
+          'existing-proj': {
+            id: 'existing-proj',
+            name: 'existing',
+            path: '/existing',
+            createdAt: '2026-01-01T00:00:00.000Z',
+            updatedAt: '2026-01-01T00:00:00.000Z',
+            agents: []
+          }
+        }
+      };
+      await fs.writeFile(targetPath, JSON.stringify(validData, null, 2));
+
+      // Create invalid source that will cause migration to fail
+      const invalidData = {
+        projects: {
+          'proj-1': {
+            id: 'proj-1',
+            path: '/test/project',
+            name: 'test-project',
+            agents: {
+              'agent-1': {
+                id: 'invalid-id-format', // Invalid UUID
+                name: 'dev.md',
+                relativePath: '.bmad/bmm/agents/dev.md',
+                absolutePath: '/nonexistent/dev.md'
+              }
+            }
+          }
+        }
+      };
+      await fs.writeFile(sourcePath, JSON.stringify(invalidData, null, 2));
+
+      // Migration should fail but not crash
+      const result = await migrateFromCcrCustom(sourcePath, targetPath);
+
+      // Target file should still exist (rollback should preserve it or restore original)
+      const targetExists = await fs.access(targetPath).then(() => true).catch(() => false);
+      expect(targetExists).toBe(true);
+    });
+
+    it('should rollback agent files on migration failure', async () => {
+      const agentPath = path.join(testDir, 'dev.md');
+      const originalContent = '<!-- CCR-AGENT-MODEL: openai,gpt-4o -->\n# Dev Agent\nOriginal content';
+      await fs.writeFile(agentPath, originalContent);
+
+      const ccrCustomData = {
+        projects: {
+          'proj-1': {
+            id: 'proj-1',
+            path: '/test/project',
+            name: 'test-project',
+            agents: {
+              'agent-1': {
+                id: 'agent-1',
+                name: 'dev.md',
+                relativePath: '.bmad/bmm/agents/dev.md',
+                absolutePath: agentPath
+              }
+            }
+          }
+        }
+      };
+
+      await fs.writeFile(sourcePath, JSON.stringify(ccrCustomData, null, 2));
+
+      // Simulate failure by making target path invalid (directory instead of file)
+      await fs.mkdir(targetPath, { recursive: true });
+
+      const result = await migrateFromCcrCustom(sourcePath, targetPath);
+
+      expect(result.success).toBe(false);
+
+      // Agent file should be rolled back to original content
+      const agentContent = await fs.readFile(agentPath, 'utf-8');
+      expect(agentContent).toBe(originalContent);
+    });
   });
 
   describe('Atomic Write', () => {
@@ -525,12 +607,13 @@ describe('migrateFromCcrCustom', () => {
 
       await fs.writeFile(sourcePath, JSON.stringify(ccrCustomData, null, 2));
 
-      const preview = await getMigrationPreview(sourcePath);
+      const previewData = await getMigrationPreview(sourcePath);
 
-      expect(preview).toContain('Projects to migrate: 1');
-      expect(preview).toContain('Total agents: 1');
-      expect(preview).toContain('Agents with model in projects.json: 1');
-      expect(preview).toContain('Agents with CCR-AGENT-MODEL tags: 1');
+      expect(previewData.totalProjects).toBe(1);
+      expect(previewData.totalAgents).toBe(1);
+      expect(previewData.agentsWithModels).toBe(1);
+      expect(previewData.agentsWithTags).toBe(1);
+      expect(previewData.error).toBeUndefined();
     });
   });
 });

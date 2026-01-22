@@ -10,6 +10,7 @@ import {
   migrateFromCcrCustom,
   isAlreadyMigrated,
   getMigrationPreview,
+  formatMigrationPreview,
   validateMigration,
   quickValidate
 } from '@CCR/shared';
@@ -47,13 +48,19 @@ function parseArgs(args: string[]): ParsedArgs {
         result.dryRun = true;
         break;
       case '--backup-dir':
-        result.backupDir = args[++i] || null;
+        if (i + 1 >= args.length || args[i + 1].startsWith('--')) {
+          throw new Error('--backup-dir requires a path argument');
+        }
+        result.backupDir = args[++i];
         break;
       case '--validate-only':
         result.validateOnly = true;
         break;
       case '--source-path':
-        result.sourcePath = args[++i] || null;
+        if (i + 1 >= args.length || args[i + 1].startsWith('--')) {
+          throw new Error('--source-path requires a path argument');
+        }
+        result.sourcePath = args[++i];
         break;
       case '-y':
       case '--yes':
@@ -152,8 +159,8 @@ async function handleFromCcrCustom(args: string[]): Promise<void> {
   }
 
   // Show preview
-  const preview = await getMigrationPreview(sourcePath);
-  console.log(preview);
+  const previewData = await getMigrationPreview(sourcePath);
+  console.log(formatMigrationPreview(previewData));
 
   // Handle validate-only mode
   if (validateOnly) {
@@ -193,11 +200,9 @@ async function handleFromCcrCustom(args: string[]): Promise<void> {
   // Perform migration
   console.log('Starting migration...\n');
 
-  // Show progress for multi-project migrations
-  const preview = await getMigrationPreview(sourcePath);
-  const projectCount = (preview.match(/Projects to migrate: (\d+)/) || [])[1];
-  if (projectCount && parseInt(projectCount) > 1) {
-    console.log(`Processing ${projectCount} projects...\n`);
+  // Show progress for multi-project migrations (use structured data)
+  if (previewData.totalProjects > 1) {
+    console.log(`Processing ${previewData.totalProjects} projects...\n`);
   }
 
   const result = await migrateFromCcrCustom(
