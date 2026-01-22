@@ -82,7 +82,8 @@ export const extractAgentId = (req: AgentDetectionRequest, log?: Logger): string
 
           // Story 1.5, Task 2.2 & 2.4: Validate UUID format (NFR-S3)
           if (!Validators.isValidAgentId(agentId)) {
-            if (log?.warn) log.warn({ agentId }, 'Invalid agent ID format in system prompt');
+            // Story 5.2 AC3: Use debug level for invalid agent ID (expected scenario)
+            if (log?.debug) log.debug(`Invalid agent ID format: ${agentId}`);
             return undefined;
           }
 
@@ -108,7 +109,8 @@ export const extractAgentId = (req: AgentDetectionRequest, log?: Logger): string
 
           // Story 1.5, Task 2.2 & 2.4: Validate UUID format (NFR-S3)
           if (!Validators.isValidAgentId(agentId)) {
-            if (log?.warn) log.warn({ agentId }, 'Invalid agent ID format in message history');
+            // Story 5.2 AC3: Use debug level for invalid agent ID (expected scenario)
+            if (log?.debug) log.debug(`Invalid agent ID format: ${agentId}`);
             return undefined;
           }
 

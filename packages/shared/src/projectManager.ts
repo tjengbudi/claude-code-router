@@ -25,6 +25,7 @@ export class ProjectManager {
   /**
    * Load projects data from projects.json (JSON5 format)
    * Story 2.4: Validates schema version for forward/backward compatibility
+   * Story 5.2: Enhanced error handling with specific error type detection
    */
   async loadProjects(): Promise<ProjectsData> {
     try {
@@ -49,16 +50,30 @@ export class ProjectManager {
         );
       }
 
-      // Story 2.4: Validate structure for graceful degradation
-      if (!data.projects || typeof data.projects !== 'object') {
-        console.warn('Invalid projects.json structure: missing or invalid projects object. Returning empty projects.');
+      // Story 5.2 AC2: Validate structure using Validators.isValidProjectsData()
+      if (!Validators.isValidProjectsData(data)) {
+        console.warn('projects.json has invalid schema, returning empty projects');
         return { projects: {} };
       }
 
       return data;
     } catch (error) {
-      // Return default structure if file doesn't exist or is corrupted
-      console.debug(`Failed to load projects.json: ${(error as Error).message}. Returning empty projects.`);
+      const errorCode = (error as NodeJS.ErrnoException).code;
+
+      // Story 5.2 AC1: Handle missing file (ENOENT) with debug level
+      if (errorCode === 'ENOENT') {
+        console.debug(`projects.json not found, agent system inactive`);
+        return { projects: {} };
+      }
+
+      // Story 5.2 AC2: Handle corrupted JSON with warn level
+      if (error instanceof SyntaxError) {
+        console.warn(`Failed to load projects.json: ${(error as Error).message}`);
+        return { projects: {} };
+      }
+
+      // Other unexpected errors - still return empty but log at error level
+      console.error(`Unexpected error loading projects.json: ${(error as Error).message}`);
       return { projects: {} };
     }
   }
@@ -613,7 +628,7 @@ ${JSON5.stringify(dataWithVersion, { space: 2 })}`;
     }
 
     // Agent not found - return undefined for graceful degradation (AC: 3)
-    console.debug(`Agent not found: ${agentId}`);
+    console.debug(`Agent not found: ${agentId}, using Router.default`);
     return undefined;
   }
 
