@@ -1,5 +1,5 @@
-import fs from 'fs/promises';
-import path from 'path';
+import * as fs from 'fs/promises';
+import * as path from 'path';
 import { v4 as uuidv4, validate as uuidValidate } from 'uuid';
 import JSON5 from 'json5';
 import { glob } from 'glob';
@@ -225,6 +225,20 @@ ${JSON5.stringify(dataWithVersion, { space: 2 })}`;
   async addProject(projectPath: string): Promise<ProjectConfig> {
     this.logger.info(`Adding project: ${projectPath}`);
 
+    // NFR-S2: Validate path - reject path traversal attempts and non-existent paths
+    if (projectPath.includes('..') || projectPath.includes('~')) {
+      this.logger.warn(`Path traversal attempt detected: ${projectPath}`);
+      throw new Error('Invalid project path');
+    }
+
+    // Check if path exists
+    try {
+      await fs.access(projectPath);
+    } catch {
+      this.logger.warn(`Project path does not exist: ${projectPath}`);
+      throw new Error('Invalid project path');
+    }
+
     // Generate and validate UUID (NFR-S3)
     const id = uuidv4();
     if (!uuidValidate(id) || !AGENT_ID_REGEX.test(id)) {
@@ -353,14 +367,14 @@ ${JSON5.stringify(dataWithVersion, { space: 2 })}`;
    * List all registered projects sorted alphabetically by name (Story 1.3)
    * @returns Array of ProjectConfig sorted by name, or undefined if no projects
    */
-  async listProjects(): Promise<ProjectConfig[] | undefined> {
+  async listProjects(): Promise<ProjectConfig[]> {
     try {
       // Load projects data using existing loadProjects() pattern
       const projectsData = await this.loadProjects();
 
       // Handle empty or missing data (graceful degradation per NFR-R3)
       if (!projectsData || !projectsData.projects || Object.keys(projectsData.projects).length === 0) {
-        return undefined;
+        return [];
       }
 
       // Convert projects object to array
@@ -376,7 +390,7 @@ ${JSON5.stringify(dataWithVersion, { space: 2 })}`;
       // Graceful degradation for corrupted files or unexpected failures (AC#4)
       // AC#4 requires debug-level warning for graceful degradation scenarios
       console.debug(`Failed to list projects: ${(error as Error).message}`);
-      return undefined;
+      return [];
     }
   }
 
