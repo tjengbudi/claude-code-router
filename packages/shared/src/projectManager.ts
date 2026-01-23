@@ -4,7 +4,7 @@ import { v4 as uuidv4, validate as uuidValidate } from 'uuid';
 import JSON5 from 'json5';
 import { glob } from 'glob';
 import type { ProjectConfig, ProjectsData, AgentConfig, RescanResult } from './types/agent';
-import { AGENT_ID_REGEX, PROJECTS_SCHEMA_VERSION } from './constants';
+import { AGENT_ID_REGEX, PROJECTS_SCHEMA_VERSION, BMAD_FOLDER_NAME } from './constants';
 import { Validators } from './validation';
 import { createLogger } from './logging/logger';
 
@@ -280,14 +280,14 @@ ${JSON5.stringify(dataWithVersion, { space: 2 })}`;
   }
 
   /**
-   * Discover agents in a project by scanning .bmad/bmm/agents/*.md files
+   * Discover agents in a project by scanning _bmad/bmm/agents/*.md files
    * Story 1.2: Updated to return agent metadata with UUID injection
    * @param projectPath - Absolute path to the project directory
    * @returns Array of AgentConfig objects with injected UUIDs
    * @throws Error if agent file write permission is denied
    */
   async discoverAgents(projectPath: string): Promise<AgentConfig[]> {
-    const agentsPattern = path.join(projectPath, '.bmad', 'bmm', 'agents', '*.md');
+    const agentsPattern = path.join(projectPath, BMAD_FOLDER_NAME, 'bmm', 'agents', '*.md');
     let agentFiles: string[];
 
     try {
@@ -430,7 +430,7 @@ ${JSON5.stringify(dataWithVersion, { space: 2 })}`;
     }
 
     // Scan filesystem for current agent files
-    const agentDir = path.join(project.path, '.bmad', 'bmm', 'agents');
+    const agentDir = path.join(project.path, BMAD_FOLDER_NAME, 'bmm', 'agents');
     let filesystemAgentFiles: string[];
 
     try {
@@ -676,18 +676,18 @@ ${JSON5.stringify(dataWithVersion, { space: 2 })}`;
     }
 
     // Subtask 1.1: Extract project path from agent file absolute path
-    // Agent files are at: {project-root}/.bmad/bmm/agents/*.md
-    // Project root is the parent of the .bmad directory
+    // Agent files are at: {project-root}/_bmad/bmm/agents/*.md
+    // Project root is the parent of the _bmad directory
     const agentFileName = path.basename(agentFilePath);
-    if (!agentFilePath.includes('.bmad' + path.sep + 'bmm' + path.sep + 'agents')) {
+    if (!agentFilePath.includes(BMAD_FOLDER_NAME + path.sep + 'bmm' + path.sep + 'agents')) {
       throw new Error(`Agent file path does not match expected pattern: ${agentFilePath}`);
     }
 
-    // Find project root by going up from .bmad/bmm/agents/
+    // Find project root by going up from _bmad/bmm/agents/
     const parts = agentFilePath.split(path.sep);
-    const bmadIndex = parts.indexOf('.bmad');
+    const bmadIndex = parts.indexOf(BMAD_FOLDER_NAME);
     if (bmadIndex === -1) {
-      throw new Error(`Cannot find .bmad directory in agent file path: ${agentFilePath}`);
+      throw new Error(`Cannot find ${BMAD_FOLDER_NAME} directory in agent file path: ${agentFilePath}`);
     }
     const projectPath = parts.slice(0, bmadIndex).join(path.sep);
 
@@ -818,7 +818,7 @@ ${JSON5.stringify(dataWithVersion, { space: 2 })}`;
 
       // Search each project for agents with matching ID
       for (const projectPath of projectDirs) {
-        const agentsPattern = path.join(projectPath, '.bmad', 'bmm', 'agents', '*.md');
+        const agentsPattern = path.join(projectPath, BMAD_FOLDER_NAME, 'bmm', 'agents', '*.md');
 
         let agentFiles: string[];
         try {

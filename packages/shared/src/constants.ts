@@ -46,6 +46,9 @@ export const API_KEY_PATTERNS = [
 // Used for forward/backward compatibility when loading projects.json from git
 export const PROJECTS_SCHEMA_VERSION = '1.0.0';
 
+// BMAD folder name - updated to use underscore prefix instead of dot
+export const BMAD_FOLDER_NAME = '_bmad';
+
 // Retry configuration for automatic LLM API request retry (Story 3.4)
 // NFR-R2: Automatic retry 3x with exponential backoff for transient API errors
 export const RETRY_CONFIG = {
