@@ -297,7 +297,7 @@ ${JSON5.stringify(dataWithVersion, { space: 2 })}`;
         return yamlPath;
       }
 
-      if (yamlContent.length === 0) {
+      if (yamlContent.trim().length === 0) {
         this.logger.warn(`Empty workflow.yaml at ${yamlPath}, skipping injection`);
         throw new Error('Empty file');
       }
@@ -325,7 +325,7 @@ ${JSON5.stringify(dataWithVersion, { space: 2 })}`;
         return instructionsPath;
       }
 
-      if (mdContent.length === 0) {
+      if (mdContent.trim().length === 0) {
         this.logger.warn(`Empty instructions.md at ${instructionsPath}, skipping injection`);
         throw new Error('Empty file');
       }
