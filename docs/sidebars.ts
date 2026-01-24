@@ -150,6 +150,20 @@ const sidebars: SidebarsConfig = {
         'team/onboarding',
       ],
     },
+    {
+      type: 'category',
+      label: 'Examples',
+      link: {
+        type: 'generated-index',
+        title: 'Workflow Examples',
+        description: 'Step-by-step workflow configuration examples',
+        slug: 'category/examples',
+      },
+      items: [
+        'examples/workflow-setup',
+        'examples/workflow-use-cases',
+      ],
+    },
   ],
 };
 
