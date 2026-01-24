@@ -94,7 +94,7 @@ describe('Story 6.3: extractRoutingId', () => {
       id: VALID_WORKFLOW_ID
     });
     expect(mockLogger.debug).toHaveBeenCalledWith(
-      { workflowId: VALID_WORKFLOW_ID, agentId: VALID_AGENT_ID },
+      { type: 'workflow', id: VALID_WORKFLOW_ID, agentId: VALID_AGENT_ID },
       'Both IDs found, prioritizing workflow'
     );
   });
@@ -241,6 +241,37 @@ describe('Story 6.3: extractRoutingId', () => {
     };
 
     const result = extractAgentId(req, mockLogger);
+
+    expect(result).toBeUndefined();
+  });
+
+  // Edge case: Empty system array
+  it('should return undefined for empty system array', () => {
+    const req: AgentDetectionRequest = {
+      body: {
+        system: []
+      }
+    };
+
+    const result = extractRoutingId(req, mockLogger);
+
+    expect(result).toBeUndefined();
+  });
+
+  // Edge case: Non-text block in system
+  it('should skip non-text blocks in system array', () => {
+    const req: AgentDetectionRequest = {
+      body: {
+        system: [
+          {
+            type: 'image',
+            source: { type: 'url', url: 'https://example.com/image.png' }
+          } as any
+        ]
+      }
+    };
+
+    const result = extractRoutingId(req, mockLogger);
 
     expect(result).toBeUndefined();
   });

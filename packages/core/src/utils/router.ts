@@ -213,6 +213,7 @@ const getUseModel = async (
   // Story 2.5: Auto-registration for zero-config team onboarding
   // Story 3.1: Session-based caching and project detection for multi-project support
   // Story 6.3: Unified routing for both agents and workflows
+  // Note: Performance metric 'agentDetection' at line 226 is legacy name for backward compatibility
 
   // Story 3.6: Measure total routing latency
   const routingStart = performance.now();

@@ -46,7 +46,7 @@ export interface Logger {
  * @param log - Logger instance for debugging
  * @returns RoutingId object with type and id, or undefined if not found
  *
- * @performance ~2ms extraction time (well under 10ms NFR-P1 target)
+ * @performance ~2ms extraction time (part of <50ms total routing target per NFR-P1)
  * @security UUID validation prevents injection attacks (NFR-S3)
  */
 export const extractRoutingId = (req: AgentDetectionRequest, log?: Logger): RoutingId | undefined => {
@@ -119,7 +119,7 @@ export const extractRoutingId = (req: AgentDetectionRequest, log?: Logger): Rout
 
   // Priority: workflow > agent (AC3)
   if (workflowId && agentId) {
-    if (log?.debug) log.debug({ workflowId, agentId }, 'Both IDs found, prioritizing workflow');
+    if (log?.debug) log.debug({ type: 'workflow', id: workflowId, agentId }, 'Both IDs found, prioritizing workflow');
     return { type: 'workflow', id: workflowId };
   }
   if (workflowId) return { type: 'workflow', id: workflowId };
