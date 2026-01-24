@@ -829,6 +829,77 @@ ${JSON5.stringify(dataWithVersion, { space: 2 })}`;
   }
 
   /**
+   * Set model configuration for a workflow - Story 6.4
+   * Stores workflow-to-model mapping in projects.json under the workflow's entry
+   * Uses optimistic locking via updatedAt timestamp to prevent concurrent modification conflicts
+   * @param projectId - UUID of the project containing the workflow
+   * @param workflowId - UUID of the workflow to configure
+   * @param model - Model string (e.g., "openai,gpt-4o") or undefined to remove model
+   * @throws Error if project not found, workflow not found, model format invalid, or concurrent modification detected
+   */
+  async setWorkflowModel(projectId: string, workflowId: string, model: string | undefined): Promise<void> {
+    // Load projects data and capture timestamp for optimistic locking
+    const data = await this.loadProjects();
+    const project = data.projects[projectId];
+
+    // Validate project exists
+    if (!project) {
+      throw new Error(`Project not found: ${projectId}`);
+    }
+
+    // Capture original timestamp for conflict detection
+    const originalTimestamp = project.updatedAt;
+
+    // Validate project has workflows array
+    if (!project.workflows || project.workflows.length === 0) {
+      throw new Error(`Workflow not found: ${workflowId}. Project ${projectId} has no workflows configured`);
+    }
+
+    // Find workflow in project
+    const workflow = project.workflows.find(w => w.id === workflowId);
+    if (!workflow) {
+      throw new Error(`Workflow not found: ${workflowId} in project: ${projectId}`);
+    }
+
+    // Validate model string format if provided
+    if (model !== undefined) {
+      if (!Validators.isValidModelString(model)) {
+        throw new Error(`Invalid model string format: ${model}. Expected format: "provider,modelname" (e.g., "openai,gpt-4o")`);
+      }
+    }
+
+    // Update workflow model
+    if (model === undefined) {
+      // Remove model property to use Router.default fallback
+      delete workflow.model;
+    } else {
+      workflow.model = model;
+    }
+
+    // Update project timestamp
+    const newTimestamp = new Date().toISOString();
+    project.updatedAt = newTimestamp;
+
+    // Optimistic locking: Reload and check if timestamp changed before save
+    const currentData = await this.loadProjects();
+    const currentProject = currentData.projects[projectId];
+
+    if (currentProject && currentProject.updatedAt && originalTimestamp &&
+        currentProject.updatedAt !== originalTimestamp) {
+      throw new Error(
+        `Concurrent modification detected for project ${projectId}. ` +
+        `Another process modified the project between read and write. ` +
+        `Please retry the operation.`
+      );
+    }
+
+    // Save to file using atomic write pattern
+    await this.saveProjects(data);
+
+    this.logger.info(`Workflow model updated: ${workflow.name} -> ${model || '[default]'}`);
+  }
+
+  /**
    * Set model configuration for an agent - Story 2.1
    * Stores agent-to-model mapping in projects.json under the agent's entry
    * @param projectId - UUID of the project containing the agent

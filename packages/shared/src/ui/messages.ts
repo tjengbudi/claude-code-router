@@ -11,6 +11,7 @@
  */
 
 import type { AgentConfig, WorkflowConfig } from '../types/agent';
+import { Validators } from '../validation';
 
 // ANSI color codes for consistent output (from existing projectCommand.ts)
 const RESET = "\x1B[0m";
@@ -197,25 +198,31 @@ export function formatProjectAddedSuccess(project: ProjectSuccessData): string {
 
 /**
  * Format configuration success message
- * @param configuredAgents - Array of configured agents with name and model
+ * Story 6.4: Extended to support both agents and workflows
+ * @param configuredEntities - Array of configured entities with name and model
  * @returns Formatted configuration success message
  */
-export function formatConfigurationSuccess(configuredAgents: AgentConfig[]): string {
+export interface ConfiguredEntity {
+  name: string;
+  model?: string;
+}
+
+export function formatConfigurationSuccess(configuredEntities: ConfiguredEntity[]): string {
   const lines: string[] = [];
 
-  if (configuredAgents.length === 0) {
-    lines.push(colorize("✓ No agents to configure", YELLOW));
+  if (configuredEntities.length === 0) {
+    lines.push(colorize("✓ No entities to configure", YELLOW));
     return lines.join("\n");
   }
 
-  lines.push(colorize(`✓ Configured ${configuredAgents.length} agent(s):`, GREEN));
+  lines.push(colorize(`✓ Configured ${configuredEntities.length} entit${configuredEntities.length === 1 ? 'y' : 'ies'}:`, GREEN));
 
   const box = getBoxDrawing();
-  configuredAgents.forEach((agent, index) => {
-    const isLast = index === configuredAgents.length - 1;
+  configuredEntities.forEach((entity, index) => {
+    const isLast = index === configuredEntities.length - 1;
     const prefix = isLast ? box.LAST : box.BRANCH;
-    const model = agent.model || "[default]";
-    lines.push(colorize(`  ${prefix} ${agent.name} → ${model}`, DIM));
+    const model = entity.model || "[default]";
+    lines.push(colorize(`  ${prefix} ${entity.name} → ${model}`, DIM));
   });
 
   // Git sharing notice
@@ -365,37 +372,54 @@ export function formatProjectList(projects: ProjectListData[]): string {
     lines.push(`${index + 1}. ${project.name}`);
     lines.push(`   ID: ${project.id}`);
     lines.push(`   Path: ${truncatePath(project.path)}`);
-    lines.push(`   Agents: ${project.agents.length}`);
 
-    // Story 6.1: Display workflow count
-    if (project.workflows && project.workflows.length > 0) {
-      lines.push(`   Workflows: ${project.workflows.length}`);
+    // Agent count display
+    const configuredAgents = (project.agents || []).filter(a => a.model !== undefined).length;
+    const totalAgents = (project.agents || []).length;
+    const defaultAgents = totalAgents - configuredAgents;
+    if (totalAgents > 0) {
+      lines.push(`   Agents: ${totalAgents} (${configuredAgents} configured, ${defaultAgents} default)`);
+    } else {
+      lines.push(`   Agents: 0`);
     }
 
-    if (project.agents.length > 0) {
+    // Story 6.4: Workflow count display with configured/default breakdown
+    const workflows = project.workflows || [];
+    const configuredWorkflows = workflows.filter(w => w.model !== undefined).length;
+    const totalWorkflows = workflows.length;
+    const defaultWorkflows = totalWorkflows - configuredWorkflows;
+    if (totalWorkflows > 0) {
+      lines.push(`   Workflows: ${totalWorkflows} (${configuredWorkflows} configured, ${defaultWorkflows} default)`);
+    } else {
+      lines.push(`   Workflows: 0`);
+    }
+
+    // Agent details
+    if (project.agents && project.agents.length > 0) {
       lines.push("   Agent Details:");
       project.agents.forEach((agent, i) => {
-        const isLast = i === project.agents.length - 1;
+        const isLast = i === project.agents!.length - 1;
         const prefix = isLast ? "   └─" : "   ├─";
-        const model = agent.model || "[default]";
+        // Validate model string format before display
+        const model = (agent.model && Validators.isValidModelString(agent.model))
+          ? agent.model
+          : "[default]";
         lines.push(`${prefix} ${agent.name} → ${model}`);
         lines.push(`      CCR-AGENT-ID: ${agent.id}`);
       });
     }
 
-    // Story 6.1: Display workflow details
+    // Story 6.4: Workflow details with model assignments
     if (project.workflows && project.workflows.length > 0) {
       lines.push("   Workflow Details:");
       project.workflows.forEach((workflow, i) => {
         const isLast = i === project.workflows!.length - 1;
         const prefix = isLast ? "   └─" : "   ├─";
-        const verticalBar = isLast ? "      " : "   │  ";
-
-        lines.push(`${prefix} ${workflow.name}`);
-        if (workflow.description) {
-          lines.push(`${verticalBar}${workflow.description}`);
-        }
-        lines.push(`${verticalBar}Path: ${truncatePath(workflow.relativePath, 60)}`);
+        // Validate model string format before display
+        const model = (workflow.model && Validators.isValidModelString(workflow.model))
+          ? workflow.model
+          : "[default]";
+        lines.push(`${prefix} ${workflow.name} → ${model}`);
       });
     }
 

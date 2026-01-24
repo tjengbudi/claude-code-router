@@ -5,7 +5,8 @@ import { ProjectManager, Validators, PROJECTS_FILE,
   formatProjectList,
   formatScanResult,
   formatHelpText,
-  colors
+  colors,
+  type ConfiguredEntity
 } from '@CCR/shared';
 import path from 'path';
 import type { RescanResult, AgentConfig } from '@CCR/shared';
@@ -280,7 +281,7 @@ async function configureNewAgentsInteractive(
   if (applySameModelToAll) {
     // Bulk mode: add all agents with same model
     for (const agent of newAgents) {
-      session.addChange(agent.id, agent.name, agent.model, bulkModel);
+      session.addAgentChange(agent.id, agent.name, agent.model, bulkModel);
     }
   } else {
     // Individual mode: prompt for each agent
@@ -312,7 +313,7 @@ async function configureNewAgentsInteractive(
         }
 
         // Track change in session (not saved yet)
-        session.addChange(agent.id, agent.name, agent.model, actualModel);
+        session.addAgentChange(agent.id, agent.name, agent.model, actualModel);
 
         // Show confirmation (AC3)
         const modelDisplay = actualModel || '[default]';
@@ -335,15 +336,15 @@ async function configureNewAgentsInteractive(
       const savedCount = session.getSavedCount();
 
       // Build configured agents array for formatting
-      const configuredAgents: AgentConfig[] = [];
+      const configuredAgents: ConfiguredEntity[] = [];
       for (const line of session.getSummary()) {
-        // Parse line format: "agent-name (id) → model"
-        const match = line.match(/^(.+) \(([^)]+)\) → (.+)$/);
+        // Parse line format: "  - entity-name → model"
+        // Note: ID is no longer included in summary format (Story 6.4)
+        const match = line.match(/^[\s\-]+(.+?) → (.+)$/);
         if (match) {
           configuredAgents.push({
             name: match[1],
-            id: match[2],
-            model: match[3] === '[default]' ? undefined : match[3],
+            model: match[2] === '[default]' ? undefined : match[2],
           });
         }
       }

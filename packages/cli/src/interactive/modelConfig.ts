@@ -1,6 +1,6 @@
 import { select, confirm } from '@inquirer/prompts';
 import { ProjectManager, Validators, PROJECTS_FILE } from '@CCR/shared';
-import type { ProjectConfig, AgentConfig } from '@CCR/shared';
+import type { ProjectConfig, AgentConfig, WorkflowConfig } from '@CCR/shared';
 import fs from 'fs/promises';
 import path from 'path';
 import { HOME_DIR } from '@CCR/shared';
@@ -13,7 +13,7 @@ const GREEN = "\x1B[32m";
 const YELLOW = "\x1B[33m";
 const RED = "\x1B[31m";
 
-// Special action values for agent selection (HIGH-3: centralized constants)
+// Special action values for entity selection
 export const ACTION_DONE = 'DONE';
 export const ACTION_CANCEL = 'CANCEL';
 export const VALUE_DEFAULT = 'default';
@@ -27,45 +27,62 @@ interface ModelOption {
 }
 
 /**
- * Configuration change tracking
+ * Entity type for configuration changes
+ */
+type EntityType = 'agent' | 'workflow';
+
+/**
+ * Configuration change tracking - Story 6.4: Extended for workflows
  */
 interface ConfigurationChange {
-  agentId: string;
-  agentName: string;
+  entityType: EntityType;
+  entityId: string;
+  entityName: string;
   oldModel: string | undefined;
   newModel: string | undefined;
 }
 
 /**
  * Configuration session for tracking changes with transaction safety
+ * Story 6.4: Extended to support both agents and workflows
  */
 export class ConfigurationSession {
   private changes: Map<string, ConfigurationChange> = new Map();
-  private savedAgentIds: Set<string> = new Set();
+  private savedIds: Set<string> = new Set();
 
-  addChange(agentId: string, agentName: string, oldModel: string | undefined, newModel: string | undefined): void {
-    this.changes.set(agentId, { agentId, agentName, oldModel, newModel });
+  addAgentChange(agentId: string, agentName: string, oldModel: string | undefined, newModel: string | undefined): void {
+    this.changes.set(`agent:${agentId}`, { entityType: 'agent', entityId: agentId, entityName: agentName, oldModel, newModel });
+  }
+
+  addWorkflowChange(workflowId: string, workflowName: string, oldModel: string | undefined, newModel: string | undefined): void {
+    this.changes.set(`workflow:${workflowId}`, { entityType: 'workflow', entityId: workflowId, entityName: workflowName, oldModel, newModel });
   }
 
   async save(projectId: string): Promise<void> {
     const pm = new ProjectManager(PROJECTS_FILE);
-    this.savedAgentIds.clear();
+    this.savedIds.clear();
 
-    try {
-      for (const [agentId, change] of this.changes) {
-        await pm.setAgentModel(projectId, agentId, change.newModel);
-        this.savedAgentIds.add(agentId);
+    for (const change of this.changes.values()) {
+      try {
+        if (change.entityType === 'agent') {
+          await pm.setAgentModel(projectId, change.entityId, change.newModel);
+          this.savedIds.add(change.entityId);
+        } else if (change.entityType === 'workflow') {
+          await pm.setWorkflowModel(projectId, change.entityId, change.newModel);
+          this.savedIds.add(change.entityId);
+        }
+      } catch (error) {
+        // Rollback: clear saved IDs on failure for potential retry
+        this.savedIds.clear();
+        const entityTypeLabel = change.entityType === 'agent' ? 'agent' : 'workflow';
+        throw new Error(`Failed to save ${entityTypeLabel} "${change.entityName}": ${(error as Error).message}`);
       }
-    } catch (error) {
-      // Rollback: clear saved agent IDs on failure for potential retry
-      this.savedAgentIds.clear();
-      throw error;
     }
   }
 
   getSummary(): string[] {
     return Array.from(this.changes.values()).map(change =>
-      `  - ${change.agentName} → ${change.newModel || '[default]'}`
+      `  - ${change.entityName} → ${change.newModel || '[default]'}`
     );
   }
 
@@ -74,7 +91,15 @@ export class ConfigurationSession {
   }
 
   getSavedCount(): number {
-    return this.savedAgentIds.size;
+    return this.savedIds.size;
+  }
+
+  getAgentCount(): number {
+    return Array.from(this.changes.values()).filter(c => c.entityType === 'agent').length;
+  }
+
+  getWorkflowCount(): number {
+    return Array.from(this.changes.values()).filter(c => c.entityType === 'workflow').length;
   }
 }
 
@@ -167,7 +192,8 @@ function getDefaultModels(): ModelOption[] {
 
 /**
  * Interactive model configuration for a project
- * Allows users to assign models to agents via CLI prompts
+ * Story 6.4: Extended to support both agents and workflows
+ * Allows users to assign models to agents and workflows via CLI prompts
  *
  * @param projectId - UUID v4 of the project to configure
  * @returns Promise that resolves when configuration is complete
@@ -177,8 +203,8 @@ function getDefaultModels(): ModelOption[] {
  *
  * Workflow:
  * 1. Validates project ID and loads project
- * 2. Presents agent selection with current model display
- * 3. For each agent: presents model selection from config.json
+ * 2. Presents entity selection (agents and workflows) with current model display
+ * 3. For each entity: presents model selection from config.json
  * 4. Tracks changes in memory (ConfigurationSession)
  * 5. On "Done": saves all changes atomically
  * 6. On "Cancel" or Ctrl+C: discards all changes
@@ -203,102 +229,138 @@ export async function interactiveModelConfiguration(projectId: string): Promise<
     process.exit(1);
   }
 
-  // Check if project has agents
-  if (!project.agents || project.agents.length === 0) {
-    console.log(`${YELLOW}No agents found in project.${RESET}`);
-    console.log(`${DIM}Add agents first with: ccr project scan ${projectId}${RESET}`);
+  // Check if project has any entities to configure
+  const hasAgents = project.agents && project.agents.length > 0;
+  const hasWorkflows = project.workflows && project.workflows.length > 0;
+
+  if (!hasAgents && !hasWorkflows) {
+    console.log(`${YELLOW}No agents or workflows found in project.${RESET}`);
+    console.log(`${DIM}Add agents with: ccr project scan ${projectId}${RESET}`);
+    console.log(`${DIM}Workflows will be auto-discovered from .bmad/bmm/workflows/${RESET}`);
     return;
   }
 
-  console.log(`${CYAN}\nConfiguring agents for project: ${project.name}${RESET}`);
+  console.log(`${CYAN}\nConfiguring project: ${project.name}${RESET}`);
+
+  // Display current configuration
+  if (hasAgents) {
+    console.log(`\n${DIM}--- Agents ---${RESET}`);
+    project.agents.forEach(agent => {
+      const model = agent.model || '[default]';
+      console.log(`  ${agent.name} → ${model}`);
+    });
+  }
+
+  if (hasWorkflows) {
+    console.log(`\n${DIM}--- Workflows ---${RESET}`);
+    project.workflows!.forEach(workflow => {
+      const model = workflow.model || '[default]';
+      console.log(`  ${workflow.name} → ${model}`);
+    });
+  }
 
   // Main configuration loop
   let configuring = true;
   while (configuring) {
     try {
-      // Build agent selection choices without ANSI codes in choice names (MED-1 fix)
-      const agentChoices = project.agents.map(agent => ({
-        value: agent.id,
-        name: `${agent.name} → ${agent.model || '[not configured]'}`
-      }));
+      // Build entity selection choices
+      const entityChoices: Array<{ value: string; name: string }> = [];
+
+      // Add agent choices
+      if (hasAgents) {
+        for (const agent of project.agents!) {
+          entityChoices.push({
+            value: `agent:${agent.id}`,
+            name: `${agent.name} (agent) → ${agent.model || '[default]'}`
+          });
+        }
+      }
+
+      // Add workflow choices
+      if (hasWorkflows) {
+        for (const workflow of project.workflows!) {
+          entityChoices.push({
+            value: `workflow:${workflow.id}`,
+            name: `${workflow.name} (workflow) → ${workflow.model || '[default]'}`
+          });
+        }
+      }
 
       // Add special options
-      agentChoices.push(
+      entityChoices.push(
         { value: ACTION_DONE, name: '[Done - Save changes]' },
         { value: ACTION_CANCEL, name: '[Cancel]' }
       );
 
-      // Agent selection prompt
-      const selectedAgentId = await select({
-        message: 'Select agent to configure:',
-        choices: agentChoices
+      // Entity selection prompt
+      const selectedEntity = await select({
+        message: 'Select entity to configure:',
+        choices: entityChoices
       });
 
       // Handle special options
-      if (selectedAgentId === ACTION_CANCEL) {
+      if (selectedEntity === ACTION_CANCEL) {
         console.log(`${YELLOW}\nConfiguration cancelled, no changes saved${RESET}`);
         return;
       }
 
-      if (selectedAgentId === ACTION_DONE) {
+      if (selectedEntity === ACTION_DONE) {
         configuring = false;
         break;
       }
 
-      // Get selected agent
-      const agent = project.agents.find(a => a.id === selectedAgentId);
-      if (!agent) {
-        console.error(`${RED}✗ Error: Agent not found${RESET}`);
-        continue;
+      // Parse entity selection
+      const [entityType, entityId] = selectedEntity.split(':');
+
+      if (entityType === 'agent') {
+        // Handle agent configuration
+        const agent = project.agents!.find(a => a.id === entityId);
+        if (!agent) {
+          console.error(`${RED}✗ Error: Agent not found${RESET}`);
+          continue;
+        }
+
+        const actualModel = await selectModelForEntity(agent.name, agent.model);
+
+        if (actualModel === 'skip') {
+          continue;
+        }
+
+        // Track the change
+        session.addAgentChange(agent.id, agent.name, agent.model, actualModel);
+
+        // Update in-memory state for display
+        agent.model = actualModel;
+
+        // Show confirmation
+        const modelDisplay = actualModel || '[default]';
+        console.log(`${GREEN}✓ ${agent.name} → ${modelDisplay}${RESET}`);
+      } else if (entityType === 'workflow') {
+        // Handle workflow configuration (Story 6.4)
+        const workflow = project.workflows!.find(w => w.id === entityId);
+        if (!workflow) {
+          console.error(`${RED}✗ Error: Workflow not found${RESET}`);
+          continue;
+        }
+
+        const actualModel = await selectModelForEntity(workflow.name, workflow.model);
+
+        if (actualModel === 'skip') {
+          continue;
+        }
+
+        // Track the change
+        session.addWorkflowChange(workflow.id, workflow.name, workflow.model, actualModel);
+
+        // Update in-memory state for display
+        workflow.model = actualModel;
+
+        // Show confirmation
+        const modelDisplay = actualModel || '[default]';
+        console.log(`${GREEN}✓ ${workflow.name} → ${modelDisplay}${RESET}`);
       }
 
-      // Load available models
-      const availableModels = await getAvailableModels();
-      const modelChoices = availableModels.map(m => ({
-        value: m.value,
-        name: m.label
-      }));
-      modelChoices.push({
-        value: VALUE_DEFAULT,
-        name: '[Use Router.default]'
-      });
-
-      // Model selection prompt - fix default selection (HIGH-2 fix)
-      // Default should match the actual choice value, not fall back to 'default' string
-      const defaultModel = agent.model || VALUE_DEFAULT;
-      const selectedModel = await select({
-        message: `Select model for ${agent.name}:`,
-        choices: modelChoices,
-        default: defaultModel
-      });
-
-      // Validate selection before storing (HIGH-2 fix - moved before addChange)
-      const actualModel = selectedModel === VALUE_DEFAULT ? undefined : selectedModel;
-      if (actualModel !== undefined && !Validators.isValidModelString(actualModel)) {
-        console.error(`${RED}✗ Error: Invalid model format: ${actualModel}${RESET}`);
-        console.log(`${DIM}  Model must be in format: provider,modelname${RESET}`);
-        continue; // Skip this change and return to agent selection
-      }
-
-      // Track the change (after validation)
-      session.addChange(agent.id, agent.name, agent.model, actualModel);
-
-      // Update in-memory cloned agent state for display
-      agent.model = actualModel;
-
-      // Show confirmation
-      const modelDisplay = actualModel || '[default]';
-      console.log(`${GREEN}✓ ${agent.name} → ${modelDisplay}${RESET}`);
-
-      // Ask if user wants to configure another agent
-      const continueConfig = await confirm({
-        message: 'Configure another agent?',
-        default: true
-      });
-
-      if (!continueConfig) {
-        configuring = false;
-      }
+      // Loop continues - user will see entity selection menu again
 
     } catch (error: any) {
       if (error.name === 'ExitPromptError') {
@@ -315,28 +377,90 @@ export async function interactiveModelConfiguration(projectId: string): Promise<
     try {
       await session.save(projectId);
       const savedCount = session.getSavedCount();
+      const agentCount = session.getAgentCount();
+      const workflowCount = session.getWorkflowCount();
+
       console.log(`${GREEN}\n✓ Configuration complete!${RESET}`);
-      console.log(`\nConfigured ${savedCount} agent${savedCount === 1 ? '' : 's'}:`);
+
+      // Display configured entities
+      if (agentCount > 0 && workflowCount > 0) {
+        console.log(`\nConfigured ${agentCount} agent${agentCount === 1 ? '' : 's'} and ${workflowCount} workflow${workflowCount === 1 ? '' : 's'}:`);
+      } else if (agentCount > 0) {
+        console.log(`\nConfigured ${agentCount} agent${agentCount === 1 ? '' : 's'}:`);
+      } else if (workflowCount > 0) {
+        console.log(`\nConfigured ${workflowCount} workflow${workflowCount === 1 ? '' : 's'}:`);
+      }
+
       for (const line of session.getSummary()) {
         console.log(`${DIM}${line}${RESET}`);
       }
 
-      // Story 2.4: Git workflow guidance
+      // Git workflow guidance
       console.log(`\n${DIM}Next steps:${RESET}`);
       console.log(`${DIM}  • Copy projects.json to share with your team:${RESET}`);
       console.log(`${DIM}      cp ~/.claude-code-router/projects.json .claude-code-router/${RESET}`);
       console.log(`${DIM}  • Commit and push to git:${RESET}`);
       console.log(`${DIM}      git add .claude-code-router/projects.json${RESET}`);
-      console.log(`${DIM}      git commit -m "Configure agent model assignments"${RESET}`);
+      console.log(`${DIM}      git commit -m "Configure model assignments"${RESET}`);
       console.log(`${DIM}  • Team members will receive this configuration on git pull${RESET}`);
       console.log(`${DIM}  • No manual setup needed for team members (zero-config onboarding)${RESET}`);
     } catch (error) {
       const errorMsg = (error as Error).message;
       console.error(`${RED}✗ Error saving configuration: ${errorMsg}${RESET}`);
-      console.error(`${DIM}  ${session.getCount()} agent(s) configured but not saved${RESET}`);
+      console.error(`${DIM}  ${session.getCount()} entit${session.getCount() === 1 ? 'y' : 'ies'} configured but not saved${RESET}`);
       process.exit(1);
     }
   } else {
     console.log(`${DIM}\nNo changes to save${RESET}`);
   }
+}
+
+/**
+ * Select model for an entity (agent or workflow)
+ * Presents interactive model selection prompt and validates the result
+ *
+ * @param entityName - Name of the entity being configured
+ * @param currentModel - Current model assignment (undefined if using Router.default)
+ * @returns Promise resolving to selected model string, undefined for Router.default, or 'skip' on validation failure
+ *
+ * @throws {Error} If user interrupts the prompt (ExitPromptError)
+ *
+ * @example
+ * const model = await selectModelForEntity('dev.md', undefined);
+ * // Returns: 'openai,gpt-4o' or undefined or 'skip'
+ */
+async function selectModelForEntity(
+  entityName: string,
+  currentModel: string | undefined
+): Promise<string | undefined | 'skip'> {
+  // Load available models
+  const availableModels = await getAvailableModels();
+  const modelChoices = availableModels.map(m => ({
+    value: m.value,
+    name: m.label
+  }));
+  modelChoices.push({
+    value: VALUE_DEFAULT,
+    name: '[Use Router.default]'
+  });
+
+  // Default to current model or Router.default
+  const defaultModel = currentModel || VALUE_DEFAULT;
+
+  // Model selection prompt
+  const selectedModel = await select({
+    message: `Select model for ${entityName}:`,
+    choices: modelChoices,
+    default: defaultModel
+  });
+
+  // Validate selection before storing
+  const actualModel = selectedModel === VALUE_DEFAULT ? undefined : selectedModel;
+  if (actualModel !== undefined && !Validators.isValidModelString(actualModel)) {
+    console.error(`${RED}✗ Error: Invalid model format: ${actualModel}${RESET}`);
+    console.log(`${DIM}  Model must be in format: provider,modelname${RESET}`);
+    return 'skip'; // Signal to skip this change
+  }
+
+  return actualModel;
 }
