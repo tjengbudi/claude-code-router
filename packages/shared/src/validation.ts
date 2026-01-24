@@ -48,6 +48,7 @@ export class Validators {
   /**
    * Validate projects.json schema with type guard
    * Story 2.4: Enhanced with schema version validation and graceful degradation
+   * Story 6.1: Added workflow validation
    * @param data - Data to validate
    * @returns true if data is valid ProjectsData structure
    */
@@ -70,6 +71,20 @@ export class Validators {
         console.warn('Invalid schemaVersion format (should be string), ignoring');
       }
       // Version mismatch is allowed - will log warning in loadProjects
+    }
+
+    // Story 6.1: Validate workflows if present (backward compatible)
+    for (const project of Object.values(projects as Record<string, any>)) {
+      if (project.workflows !== undefined) {
+        if (!Array.isArray(project.workflows)) {
+          return false;
+        }
+        for (const workflow of project.workflows) {
+          if (!this.isValidWorkflowConfig(workflow)) {
+            return false;
+          }
+        }
+      }
     }
 
     return true;
@@ -131,6 +146,22 @@ export class Validators {
     // Basic semver regex: X.Y.Z where X, Y, Z are numbers
     const semverRegex = /^\d+\.\d+\.\d+(-[a-zA-Z0-9.]+)?$/;
     return semverRegex.test(version);
+  }
+
+  /**
+   * Validate WorkflowConfig structure - Story 6.1
+   * @param workflow - Workflow object to validate
+   * @returns true if workflow has valid structure
+   */
+  static isValidWorkflowConfig(workflow: any): boolean {
+    return (
+      typeof workflow === 'object' &&
+      workflow !== null &&
+      typeof workflow.name === 'string' &&
+      typeof workflow.description === 'string' &&
+      typeof workflow.relativePath === 'string' &&
+      typeof workflow.absolutePath === 'string'
+    );
   }
 
   /**

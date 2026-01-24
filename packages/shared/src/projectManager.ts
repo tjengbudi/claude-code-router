@@ -3,7 +3,8 @@ import * as path from 'path';
 import { v4 as uuidv4, validate as uuidValidate } from 'uuid';
 import JSON5 from 'json5';
 import { glob } from 'glob';
-import type { ProjectConfig, ProjectsData, AgentConfig, RescanResult } from './types/agent';
+import * as yaml from 'js-yaml';
+import type { ProjectConfig, ProjectsData, AgentConfig, RescanResult, WorkflowConfig } from './types/agent';
 import { AGENT_ID_REGEX, PROJECTS_SCHEMA_VERSION, BMAD_FOLDER_NAME } from './constants';
 import { Validators } from './validation';
 import { createLogger } from './logging/logger';
@@ -262,11 +263,16 @@ ${JSON5.stringify(dataWithVersion, { space: 2 })}`;
     const agents = await this.discoverAgents(projectPath);
     this.logger.info(`Discovered ${agents.length} agents in project: ${name}`);
 
+    // Story 6.1: Discover workflows
+    const workflows = await this.scanWorkflows(projectPath);
+    this.logger.info(`Discovered ${workflows.length} workflows in project: ${name}`);
+
     const projectConfig: ProjectConfig = {
       id,
       name,
       path: projectPath,
       agents,
+      workflows,
       createdAt: now,
       updatedAt: now,
     };
@@ -328,7 +334,107 @@ ${JSON5.stringify(dataWithVersion, { space: 2 })}`;
   }
 
   /**
+   * Discover workflows in a project by scanning workflow.yaml files
+   * Story 6.1: Workflow discovery and metadata extraction
+   * @param projectPath - Absolute path to the project directory
+   * @returns Array of WorkflowConfig objects with metadata
+   */
+  private async scanWorkflows(projectPath: string): Promise<WorkflowConfig[]> {
+    const workflowsDir = path.join(projectPath, BMAD_FOLDER_NAME, 'bmm', 'workflows');
+
+    // Check if workflows directory exists
+    try {
+      await fs.access(workflowsDir);
+    } catch {
+      this.logger.debug(`No workflows directory found at ${workflowsDir}`);
+      return [];
+    }
+
+    const workflows: WorkflowConfig[] = [];
+
+    // Use glob to find all workflow.yaml files
+    try {
+      const workflowFiles = await glob('*/workflow.yaml', {
+        cwd: workflowsDir,
+        absolute: false,
+        windowsPathsNoEscape: true
+      });
+
+      for (const workflowFile of workflowFiles) {
+        const workflowDir = path.dirname(workflowFile);
+        const absoluteWorkflowPath = path.join(workflowsDir, workflowDir);
+        const yamlPath = path.join(absoluteWorkflowPath, 'workflow.yaml');
+
+        try {
+          // Validate workflow directory structure
+          const dirStats = await fs.stat(absoluteWorkflowPath);
+          if (!dirStats.isDirectory()) {
+            this.logger.warn(`Invalid workflow structure: ${absoluteWorkflowPath} is not a directory`);
+            continue;
+          }
+
+          // Validate workflow.yaml exists
+          try {
+            await fs.access(yamlPath);
+          } catch {
+            this.logger.warn(`Missing workflow.yaml in ${absoluteWorkflowPath}`);
+            continue;
+          }
+
+          // Parse workflow.yaml
+          const yamlContent = await fs.readFile(yamlPath, 'utf-8');
+          let workflowData: any;
+
+          try {
+            workflowData = yaml.load(yamlContent);
+          } catch (yamlError) {
+            this.logger.warn(`Invalid YAML syntax in ${yamlPath}: ${(yamlError as Error).message}`);
+            continue;
+          }
+
+          // Validate workflow data structure
+          if (!workflowData || typeof workflowData !== 'object') {
+            this.logger.warn(`Invalid workflow data in ${yamlPath}: expected object, got ${typeof workflowData}`);
+            continue;
+          }
+
+          // Extract metadata
+          const workflow: WorkflowConfig = {
+            id: '', // Will be injected in Story 6.2
+            name: workflowData.name || workflowDir,
+            description: workflowData.description || '',
+            relativePath: path.join(BMAD_FOLDER_NAME, 'bmm', 'workflows', workflowDir),
+            absolutePath: absoluteWorkflowPath
+          };
+
+          workflows.push(workflow);
+          this.logger.debug(`Discovered workflow: ${workflow.name} at ${workflow.relativePath}`);
+        } catch (error) {
+          // Handle file read errors
+          if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+            this.logger.warn(`Workflow file not found: ${yamlPath}`);
+          } else if ((error as NodeJS.ErrnoException).code === 'EACCES') {
+            this.logger.warn(`Permission denied reading workflow: ${yamlPath}`);
+          } else {
+            this.logger.warn(`Failed to process workflow at ${yamlPath}: ${(error as Error).message}`);
+          }
+          // Continue scanning other workflows
+        }
+      }
+    } catch (error) {
+      // If glob fails, return empty array
+      if ((error as NodeJS.ErrnoException).code === 'EACCES' || (error as NodeJS.ErrnoException).code === 'EPERM') {
+        this.logger.warn(`Permission denied accessing workflows directory: ${workflowsDir}`);
+      }
+      return [];
+    }
+
+    return workflows;
+  }
+
+  /**
    * Scan project to discover agents and inject UUIDs (Story 1.2)
+   * Story 6.1: Extended to discover workflows
    * Updates project metadata in projects.json with discovered agent information
    * @param projectId - UUID of the project to scan
    * @returns Updated ProjectConfig with agent metadata
@@ -354,8 +460,12 @@ ${JSON5.stringify(dataWithVersion, { space: 2 })}`;
       agentIds.add(agent.id);
     }
 
-    // Update project with agent metadata
+    // Story 6.1: Discover workflows
+    const workflows = await this.scanWorkflows(project.path);
+
+    // Update project with agent and workflow metadata
     project.agents = agents;
+    project.workflows = workflows;
     project.updatedAt = new Date().toISOString();
 
     await this.saveProjects(data);

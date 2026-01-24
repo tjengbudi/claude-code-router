@@ -10,6 +10,18 @@ export interface AgentConfig {
 }
 
 /**
+ * Workflow metadata interface (Story 6.1)
+ */
+export interface WorkflowConfig {
+  id: string;              // UUID v4 (will be added in Story 6.2)
+  name: string;            // From workflow.yaml 'name' field
+  description: string;     // From workflow.yaml 'description' field
+  relativePath: string;    // e.g., ".bmad/bmm/workflows/correct-course"
+  absolutePath: string;    // Full path to workflow directory
+  model?: string;          // Optional model assignment (added in Story 6.4)
+}
+
+/**
  * Legacy agent file reference (for backward compatibility)
  */
 export interface AgentFileRef {
@@ -26,6 +38,7 @@ export interface ProjectConfig {
   name: string;
   path: string;
   agents: AgentConfig[];
+  workflows: WorkflowConfig[];  // Story 6.1: Workflow discovery support
   createdAt: string;
   updatedAt: string;
 }

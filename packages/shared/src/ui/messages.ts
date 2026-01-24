@@ -146,6 +146,7 @@ export interface ProjectSuccessData {
   name: string;
   path: string;
   agents: Array<{ name: string; id: string }>;
+  workflows?: Array<{ name: string; description: string }>; // Story 6.1: Workflow discovery
 }
 
 export function formatProjectAddedSuccess(project: ProjectSuccessData): string {
@@ -156,10 +157,30 @@ export function formatProjectAddedSuccess(project: ProjectSuccessData): string {
   lines.push(`  Path: ${truncatedPath}`);
   lines.push(`  Agents discovered: ${project.agents.length}`);
 
+  // Story 6.1: Display workflows discovered
+  if (project.workflows && project.workflows.length > 0) {
+    lines.push(`  Workflows discovered: ${project.workflows.length}`);
+  }
+
   if (project.agents.length > 0) {
     lines.push("");
     lines.push("  Agents with injected UUIDs:");
     lines.push(formatAgentList(project.agents));
+  }
+
+  // Story 6.1: Display workflows if discovered
+  if (project.workflows && project.workflows.length > 0) {
+    lines.push("");
+    lines.push("  Workflows:");
+    const box = getBoxDrawing();
+    project.workflows.forEach((workflow, index) => {
+      const isLast = index === project.workflows!.length - 1;
+      const prefix = isLast ? box.LAST : box.BRANCH;
+      lines.push(`  ${prefix} ${workflow.name}`);
+      if (workflow.description) {
+        lines.push(`     ${workflow.description}`);
+      }
+    });
   }
 
   // Story 2.4: Git workflow hint for team collaboration
@@ -326,6 +347,7 @@ export interface ProjectListData {
   id: string;
   path: string;
   agents: AgentConfig[];
+  workflows?: Array<{ name: string; description: string }>; // Story 6.1: Workflow discovery
 }
 
 export function formatProjectList(projects: ProjectListData[]): string {
@@ -345,6 +367,11 @@ export function formatProjectList(projects: ProjectListData[]): string {
     lines.push(`   Path: ${truncatePath(project.path)}`);
     lines.push(`   Agents: ${project.agents.length}`);
 
+    // Story 6.1: Display workflow count
+    if (project.workflows && project.workflows.length > 0) {
+      lines.push(`   Workflows: ${project.workflows.length}`);
+    }
+
     if (project.agents.length > 0) {
       lines.push("   Agent Details:");
       project.agents.forEach((agent, i) => {
@@ -355,6 +382,23 @@ export function formatProjectList(projects: ProjectListData[]): string {
         lines.push(`      CCR-AGENT-ID: ${agent.id}`);
       });
     }
+
+    // Story 6.1: Display workflow details
+    if (project.workflows && project.workflows.length > 0) {
+      lines.push("   Workflow Details:");
+      project.workflows.forEach((workflow, i) => {
+        const isLast = i === project.workflows!.length - 1;
+        const prefix = isLast ? "   └─" : "   ├─";
+        const verticalBar = isLast ? "      " : "   │  ";
+
+        lines.push(`${prefix} ${workflow.name}`);
+        if (workflow.description) {
+          lines.push(`${verticalBar}${workflow.description}`);
+        }
+        lines.push(`${verticalBar}Path: ${truncatePath(workflow.relativePath, 60)}`);
+      });
+    }
+
     lines.push(""); // Separator between projects
   });
 

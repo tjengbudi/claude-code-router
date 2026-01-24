@@ -138,7 +138,8 @@ export async function migrateFromCcrCustom(
         path: project.path,
         createdAt: now,
         updatedAt: now,
-        agents: agentsArray // Record → Array transformation
+        agents: agentsArray, // Record → Array transformation
+        workflows: [] // Story 6.1: Initialize empty workflows array
       };
 
       migratedData.projects[projectId] = enhancedProject;
