@@ -98,15 +98,24 @@ export const extractRoutingId = (req: AgentDetectionRequest, log?: Logger): Rout
         }
       } else if (Array.isArray(message.content)) {
         for (const item of message.content) {
+          let textContent: string | undefined;
+
+          // Handle both string items and structured objects
           if (typeof item === 'string') {
-            if (!workflowId && item.includes('CCR-WORKFLOW-ID')) {
-              const match = item.match(WORKFLOW_ID_PATTERN);
+            textContent = item;
+          } else if (typeof item === 'object' && item !== null && item.type === 'text' && item.text) {
+            textContent = item.text;
+          }
+
+          if (textContent) {
+            if (!workflowId && textContent.includes('CCR-WORKFLOW-ID')) {
+              const match = textContent.match(WORKFLOW_ID_PATTERN);
               if (match && Validators.isValidWorkflowId(match[1])) {
                 workflowId = match[1];
               }
             }
-            if (!agentId && item.includes('CCR-AGENT-ID')) {
-              const match = item.match(AGENT_ID_PATTERN);
+            if (!agentId && textContent.includes('CCR-AGENT-ID')) {
+              const match = textContent.match(AGENT_ID_PATTERN);
               if (match && Validators.isValidAgentId(match[1])) {
                 agentId = match[1];
               }
