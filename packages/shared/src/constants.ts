@@ -22,6 +22,10 @@ export const PROJECTS_FILE = path.join(HOME_DIR, "projects.json");
 // Agent ID regex pattern (UUID v4)
 export const AGENT_ID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
+// Workflow ID regex pattern (UUID v4) - Story 6.2
+// Uses same pattern as AGENT_ID_REGEX for consistency
+export const WORKFLOW_ID_REGEX = AGENT_ID_REGEX;
+
 // Model string regex pattern (provider,modelname) - Story 2.1
 // Validates format: "openai,gpt-4o", "anthropic,claude-3-5-sonnet-20241022", "openrouter,meta-llama/llama-3-70b", etc.
 // Supports forward slashes in model names for providers like openrouter

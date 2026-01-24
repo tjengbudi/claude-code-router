@@ -149,11 +149,34 @@ export class Validators {
   }
 
   /**
+   * Validate workflow ID (UUID v4 format) - Story 6.2
+   * Uses both uuid.validate() and AGENT_ID_REGEX for robust validation
+   * @param workflowId - Workflow ID to validate
+   * @returns true if workflow ID is valid UUID v4 format
+   */
+  static isValidWorkflowId(workflowId: string): boolean {
+    // NFR-S3: UUID validation - use both uuid library and regex
+    return (
+      typeof workflowId === 'string' &&
+      uuidValidate(workflowId) &&
+      AGENT_ID_REGEX.test(workflowId)
+    );
+  }
+
+  /**
    * Validate WorkflowConfig structure - Story 6.1
+   * Story 6.2: Enhanced with UUID format validation for id field
    * @param workflow - Workflow object to validate
    * @returns true if workflow has valid structure
    */
   static isValidWorkflowConfig(workflow: any): boolean {
+    // Story 6.2: Validate UUID format if id field is present and non-empty
+    if (workflow.id && workflow.id !== '') {
+      if (!this.isValidWorkflowId(workflow.id)) {
+        return false;
+      }
+    }
+
     return (
       typeof workflow === 'object' &&
       workflow !== null &&

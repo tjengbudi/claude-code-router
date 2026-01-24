@@ -218,6 +218,131 @@ ${JSON5.stringify(dataWithVersion, { space: 2 })}`;
   }
 
   /**
+   * Extract workflow ID from workflow files (workflow.yaml or instructions.md) - Story 6.2
+   * Prefers workflow.yaml over instructions.md
+   * @param workflowPath - Absolute path to the workflow directory
+   * @returns Workflow ID if found, null otherwise
+   */
+  private async extractWorkflowId(workflowPath: string): Promise<string | null> {
+    const yamlPath = path.join(workflowPath, 'workflow.yaml');
+    const instructionsPath = path.join(workflowPath, 'instructions.md');
+
+    let yamlId: string | null = null;
+    let mdId: string | null = null;
+
+    // Try workflow.yaml
+    try {
+      const yamlContent = await fs.readFile(yamlPath, 'utf-8');
+      const yamlMatch = yamlContent.match(/^# CCR-WORKFLOW-ID: ([0-9a-f-]+)$/im);
+      if (yamlMatch && Validators.isValidWorkflowId(yamlMatch[1])) {
+        yamlId = yamlMatch[1];
+        this.logger.debug(`Found workflow ID in workflow.yaml: ${yamlId}`);
+      }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+        this.logger.debug(`workflow.yaml not found at ${yamlPath}`);
+      } else if (error instanceof Error && error.name === 'YAMLException') {
+        this.logger.warn(`Invalid YAML in ${yamlPath}: ${error.message}`);
+      }
+    }
+
+    // Try instructions.md
+    try {
+      const mdContent = await fs.readFile(instructionsPath, 'utf-8');
+      const mdMatch = mdContent.match(/<!-- CCR-WORKFLOW-ID: ([0-9a-f-]+) -->/i);
+      if (mdMatch && Validators.isValidWorkflowId(mdMatch[1])) {
+        mdId = mdMatch[1];
+        this.logger.debug(`Found workflow ID in instructions.md: ${mdId}`);
+      }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+        this.logger.debug(`instructions.md not found at ${instructionsPath}`);
+      }
+    }
+
+    // Validate consistency if both exist
+    if (yamlId && mdId && yamlId !== mdId) {
+      this.logger.warn(`Workflow ID mismatch: workflow.yaml=${yamlId}, instructions.md=${mdId}. Using workflow.yaml ID.`);
+      return yamlId;
+    }
+
+    return yamlId || mdId;
+  }
+
+  /**
+   * Inject workflow ID into workflow files - Story 6.2
+   * Prefers workflow.yaml, falls back to instructions.md
+   * @param workflowPath - Absolute path to the workflow directory
+   * @param workflowId - Workflow ID to inject
+   * @returns Path to the file that was injected
+   * @throws Error if injection fails
+   */
+  private async injectWorkflowId(workflowPath: string, workflowId: string): Promise<string> {
+    if (!Validators.isValidWorkflowId(workflowId)) {
+      throw new Error(`Invalid workflow ID format: ${workflowId}`);
+    }
+
+    const yamlPath = path.join(workflowPath, 'workflow.yaml');
+    const instructionsPath = path.join(workflowPath, 'instructions.md');
+
+    // Try workflow.yaml first
+    try {
+      await fs.access(yamlPath);
+      await fs.access(yamlPath, fs.constants.W_OK);
+
+      const yamlContent = await fs.readFile(yamlPath, 'utf-8');
+
+      if (yamlContent.includes('CCR-WORKFLOW-ID:')) {
+        this.logger.warn(`Workflow ID already exists in ${yamlPath}`);
+        return yamlPath;
+      }
+
+      if (yamlContent.length === 0) {
+        this.logger.warn(`Empty workflow.yaml at ${yamlPath}, skipping injection`);
+        throw new Error('Empty file');
+      }
+
+      this.logger.debug('Attempting workflow.yaml injection');
+      const idTag = `# CCR-WORKFLOW-ID: ${workflowId}`;
+      const newContent = `${idTag}\n${yamlContent}`;
+
+      await this.safeFileWrite(yamlPath, newContent);
+      this.logger.info(`Injected workflow ID into workflow.yaml: ${workflowId}`);
+      return yamlPath;
+    } catch (error) {
+      this.logger.debug(`Cannot inject into workflow.yaml: ${(error as Error).message}. Trying instructions.md`);
+    }
+
+    // Fallback to instructions.md
+    try {
+      await fs.access(instructionsPath);
+      await fs.access(instructionsPath, fs.constants.W_OK);
+
+      const mdContent = await fs.readFile(instructionsPath, 'utf-8');
+
+      if (mdContent.includes('CCR-WORKFLOW-ID:')) {
+        this.logger.warn(`Workflow ID already exists in ${instructionsPath}`);
+        return instructionsPath;
+      }
+
+      if (mdContent.length === 0) {
+        this.logger.warn(`Empty instructions.md at ${instructionsPath}, skipping injection`);
+        throw new Error('Empty file');
+      }
+
+      this.logger.debug('Falling back to instructions.md injection');
+      const idTag = `<!-- CCR-WORKFLOW-ID: ${workflowId} -->`;
+      const newContent = `${idTag}\n${mdContent}`;
+
+      await this.safeFileWrite(instructionsPath, newContent);
+      this.logger.info(`Injected workflow ID into instructions.md: ${workflowId}`);
+      return instructionsPath;
+    } catch (error) {
+      throw new Error(`Cannot inject workflow ID: neither workflow.yaml nor instructions.md is writable in ${workflowPath}`);
+    }
+  }
+
+  /**
    * Add a new project to the registry
    * @param projectPath - Absolute path to the project directory
    * @returns ProjectConfig with generated UUID and metadata
@@ -399,9 +524,31 @@ ${JSON5.stringify(dataWithVersion, { space: 2 })}`;
             workflowData = { name: undefined, description: undefined };
           }
 
+          // Story 6.2: Extract or inject workflow ID
+          let workflowId = await this.extractWorkflowId(absoluteWorkflowPath);
+
+          if (!workflowId) {
+            workflowId = uuidv4();
+
+            if (!Validators.isValidWorkflowId(workflowId)) {
+              this.logger.error(`Invalid UUID generated for workflow: ${workflowId}`);
+              continue;
+            }
+
+            try {
+              await this.injectWorkflowId(absoluteWorkflowPath, workflowId);
+              this.logger.info(`Injected workflow ID: ${workflowId} for ${workflowDir}`);
+            } catch (error) {
+              this.logger.error(`Failed to inject workflow ID for ${workflowDir}: ${(error as Error).message}`);
+              continue;
+            }
+          } else {
+            this.logger.debug(`Using existing workflow ID: ${workflowId} for ${workflowDir}`);
+          }
+
           // Extract metadata
           const workflow: WorkflowConfig = {
-            id: '', // Will be injected in Story 6.2
+            id: workflowId, // Story 6.2: Now populated
             name: workflowData.name || workflowDir,
             description: workflowData.description || '',
             relativePath: path.join(BMAD_FOLDER_NAME, 'bmm', 'workflows', workflowDir),

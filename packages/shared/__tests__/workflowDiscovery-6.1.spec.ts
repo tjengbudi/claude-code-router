@@ -214,7 +214,7 @@ description: [invalid: yaml: syntax
   });
 
   describe('scanWorkflows() - Edge Cases', () => {
-    it('should set empty string for workflow ID (Story 6.2 will inject)', async () => {
+    it('should inject valid workflow ID (Story 6.2 implemented)', async () => {
       // Arrange: Create valid workflow
       const projectsFile = path.join(TEST_DATA_DIR, 'projects.json');
       const pm = new ProjectManager(projectsFile);
@@ -229,8 +229,12 @@ description: [invalid: yaml: syntax
       // Act: Scan for workflows
       const workflows = await (pm as any).scanWorkflows(testProjectPath);
 
-      // Assert: ID should be empty string (will be injected in Story 6.2)
-      expect(workflows[0].id).toBe('');
+      // Assert: ID should be a valid UUID (Story 6.2 implementation)
+      expect(workflows[0].id).toBeTruthy();
+      expect(workflows[0].id).not.toBe('');
+      // Import Validators to check valid UUID format
+      const { Validators } = require('../src/validation');
+      expect(Validators.isValidWorkflowId(workflows[0].id)).toBe(true);
     });
 
     it('should generate correct absolute path for workflow', async () => {
