@@ -482,14 +482,15 @@ describe('Story 3.2: Cache Performance Validation - Integration Tests', () => {
       const projectId = project1Id;
       const agentId = agentIds[0];
 
-      // Cache key format: ${sessionId}:${projectId}:${agentId}
-      const expectedCacheKey = `${sessionId}:${projectId}:${agentId}`;
+      // Cache key format (Story 6.3): ${sessionId}:${type}:${projectId}:${routingId}
+      const expectedCacheKey = `${sessionId}:agent:${projectId}:${agentId}`;
       const components = expectedCacheKey.split(':');
 
-      expect(components).toHaveLength(3);
+      expect(components).toHaveLength(4);
       expect(components[0]).toBe(sessionId);
-      expect(components[1]).toBe(projectId);
-      expect(components[2]).toBe(agentId);
+      expect(components[1]).toBe('agent');
+      expect(components[2]).toBe(projectId);
+      expect(components[3]).toBe(agentId);
     });
 
     // Priority: P1
@@ -500,9 +501,10 @@ describe('Story 3.2: Cache Performance Validation - Integration Tests', () => {
 
       const agentId = agentIds[0];
 
-      const key1 = `session1:${project1Id}:${agentId}`;
-      const key2 = `session1:${project2Id}:${agentId}`;
-      const key3 = `session2:${project1Id}:${agentId}`;
+      // Story 6.3: Cache key format now includes type namespace
+      const key1 = `session1:agent:${project1Id}:${agentId}`;
+      const key2 = `session1:agent:${project2Id}:${agentId}`;
+      const key3 = `session2:agent:${project1Id}:${agentId}`;
 
       // All keys should be different
       expect(key1).not.toBe(key2);

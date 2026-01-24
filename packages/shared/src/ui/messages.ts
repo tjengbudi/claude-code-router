@@ -347,7 +347,7 @@ export interface ProjectListData {
   id: string;
   path: string;
   agents: AgentConfig[];
-  workflows?: Array<{ name: string; description: string }>; // Story 6.1: Workflow discovery
+  workflows?: WorkflowConfig[]; // Story 6.1: Workflow discovery
 }
 
 export function formatProjectList(projects: ProjectListData[]): string {

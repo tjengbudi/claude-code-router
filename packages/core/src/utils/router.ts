@@ -96,7 +96,7 @@ export const calculateTokenCount = (
 };
 
 
-import { extractAgentId, extractSessionId } from "./agentDetection";
+import { extractRoutingId, extractAgentId, extractSessionId } from "./agentDetection";
 
 const getProjectSpecificRouter = async (
   req: any,
@@ -207,125 +207,109 @@ const getUseModel = async (
     return { model: Router.think, scenarioType: 'think' };
   }
 
-  // ============ START: Agent System Integration (Story 2.3, enhanced for Story 3.1) ============
-  // Priority 6.5: Agent-based routing (between "think model" and Router.default)
-  // Story 2.3 AC: When agent has no model configured, fall back to Router.default
+  // ============ START: Unified Routing System Integration (Story 6.3) ============
+  // Priority 6.5: Agent/Workflow-based routing (between "think model" and Router.default)
+  // Story 2.3 AC: When agent/workflow has no model configured, fall back to Router.default
   // Story 2.5: Auto-registration for zero-config team onboarding
   // Story 3.1: Session-based caching and project detection for multi-project support
+  // Story 6.3: Unified routing for both agents and workflows
 
   // Story 3.6: Measure total routing latency
   const routingStart = performance.now();
 
-  // Early exit optimization: Check for tag presence first (fast string search)
-  // This ensures non-BMM users have < 1ms overhead (NFR-P3)
-  const hasAgentTag = req.body.system?.[0]?.text?.includes('CCR-AGENT-ID');
-  if (hasAgentTag) {
-    // Story 3.6: Measure agent detection latency
-    const agentDetectionStart = performance.now();
-    const agentId = extractAgentId(req, req.log);
-    performanceMonitoring.record('agentDetection', performance.now() - agentDetectionStart);
+  // Early exit optimization: Check for routing tags (< 1ms for non-BMM users)
+  const hasRoutingTag = req.body.system?.[0]?.text?.includes('CCR-');
 
-    if (agentId) {
+  if (hasRoutingTag) {
+    const routingDetectionStart = performance.now();
+    const routingId = extractRoutingId(req, req.log);
+    performanceMonitoring.record('agentDetection', performance.now() - routingDetectionStart);
+
+    if (routingId) {
       try {
-        // Story 3.1: Extract session ID for cache key
         const sessionId = extractSessionId(req);
 
-        // Story 3.1: Detect project for this agent (multi-project support)
-        const projectId = await projectManager.detectProject(agentId);
+        // Detect project based on routing type
+        let projectId: string | undefined;
+        if (routingId.type === 'agent') {
+          projectId = await projectManager.detectProject(routingId.id);
+        } else {
+          projectId = await projectManager.detectProjectByWorkflowId(routingId.id);
+        }
 
         if (projectId) {
-          // Story 3.1: Enhanced cache key with project context for multi-project isolation
-          const cacheKey = `${sessionId}:${projectId}:${agentId}`;
+          // Enhanced cache key with type namespace (AC5: ${sessionId}:${type}:${projectId}:${id})
+          const cacheKey = `${sessionId}:${routingId.type}:${projectId}:${routingId.id}`;
 
-          // Story 3.1: Check cache first (90%+ hit rate target per NFR-P2)
+          // Check cache first (90%+ hit rate target)
           try {
-            // Story 3.6: Measure cache lookup latency
             const cacheLookupStart = performance.now();
             const cachedModel = sessionAgentModelCache.get(cacheKey);
             performanceMonitoring.record('cache', performance.now() - cacheLookupStart);
 
             if (cachedModel) {
-              // Story 3.2: Track cache hit metric
               cacheMetrics.hits++;
-              // Story 5.4 AC4: Cache operations should NOT be logged at debug level
-              // Story 3.6: Record total routing latency before return
               performanceMonitoring.record('totalRouting', performance.now() - routingStart);
               return { model: cachedModel, scenarioType: 'default' };
             }
           } catch (cacheError) {
-            req.log.warn({ error: (cacheError as Error).message, cacheKey }, 'Cache get operation failed, continuing without cache');
+            req.log.warn({ error: (cacheError as Error).message, cacheKey }, 'Cache get failed');
           }
 
-          // Story 3.1: Cache miss - lookup with project context
-          const agentModel = await projectManager.getModelByAgentId(agentId, projectId);
-          if (agentModel) {
-            // Story 3.1: Store result in cache for subsequent requests
-            // Story 3.2: Track cache miss metric
+          // Cache miss - lookup based on routing type
+          let routingModel: string | undefined;
+          if (routingId.type === 'agent') {
+            routingModel = await projectManager.getModelByAgentId(routingId.id, projectId);
+          } else {
+            routingModel = await projectManager.getModelByWorkflowId(routingId.id, projectId);
+          }
+
+          if (routingModel) {
             cacheMetrics.misses++;
             try {
-              sessionAgentModelCache.set(cacheKey, agentModel);
-              // Story 5.4 AC4: Cache operations should NOT be logged at debug level
+              sessionAgentModelCache.set(cacheKey, routingModel);
             } catch (cacheError) {
-              req.log.warn({ error: (cacheError as Error).message, cacheKey }, 'Cache set operation failed, continuing without caching');
+              req.log.warn({ error: (cacheError as Error).message, cacheKey }, 'Cache set failed');
             }
-            // Story 3.6: Record total routing latency before return
             performanceMonitoring.record('totalRouting', performance.now() - routingStart);
-            return { model: agentModel, scenarioType: 'default' };
+            return { model: routingModel, scenarioType: 'default' };
           }
 
-          // Agent found but no model configured
-          req.log.debug({ agentId, projectId }, 'Agent found in project but no model configured');
+          req.log.debug({ routingId, projectId }, `${routingId.type} found but no model configured`);
         } else {
-        // Story 2.5: Agent ID found but not registered - try auto-registration
-        // Optimization: First check if agent is already registered but has no model
-        // This avoids expensive filesystem scans for known agents
-        const existingProject = await projectManager.findProjectByAgentId(agentId);
-
-        if (existingProject) {
-           req.log.debug({ agentId, projectId: existingProject.id }, 'Agent is registered but has no model configured');
-        } else {
-           req.log.debug({ agentId }, 'Agent not registered, attempting auto-registration');
-
-           // Find agent file in Claude projects directory
-           const agentFilePath = await projectManager.findAgentFileById(agentId, CLAUDE_PROJECTS_DIR);
-           if (agentFilePath) {
-             req.log.info({ agentId, agentFilePath }, 'Found agent file, triggering auto-registration');
-
-             // Auto-register the project
-             const registeredProject = await projectManager.autoRegisterFromAgentFile(agentFilePath);
-             if (registeredProject) {
-               req.log.info({ agentId, projectId: registeredProject.id }, 'Project auto-registered successfully');
-
-               // After registration, try again with enhanced caching
-               const newProjectId = registeredProject.id;
-               const newCacheKey = `${sessionId}:${newProjectId}:${agentId}`;
-
-               const agentModelAfterRegistration = await projectManager.getModelByAgentId(agentId, newProjectId);
-               if (agentModelAfterRegistration) {
-                 sessionAgentModelCache.set(newCacheKey, agentModelAfterRegistration);
-                 req.log.info({ agentId, model: agentModelAfterRegistration }, 'Agent using configured model after auto-registration');
-                 // Story 3.6: Record total routing latency before return
-                 performanceMonitoring.record('totalRouting', performance.now() - routingStart);
-                 return { model: agentModelAfterRegistration, scenarioType: 'default' };
-               }
-             }
-           } else {
-             req.log.debug({ agentId }, 'Agent file not found in Claude projects directory');
-           }
+          // PRESERVE: Auto-registration logic for agents (Story 2.5)
+          if (routingId.type === 'agent') {
+            const existingProject = await projectManager.findProjectByAgentId(routingId.id);
+            if (!existingProject) {
+              req.log.debug({ agentId: routingId.id }, 'Agent not registered, attempting auto-registration');
+              const agentFilePath = await projectManager.findAgentFileById(routingId.id, CLAUDE_PROJECTS_DIR);
+              if (agentFilePath) {
+                req.log.info({ agentId: routingId.id, agentFilePath }, 'Found agent file, triggering auto-registration');
+                const registeredProject = await projectManager.autoRegisterFromAgentFile(agentFilePath);
+                if (registeredProject) {
+                  req.log.info({ agentId: routingId.id, projectId: registeredProject.id }, 'Project auto-registered successfully');
+                  // Retry with registered project
+                  const agentModel = await projectManager.getModelByAgentId(routingId.id, registeredProject.id);
+                  if (agentModel) {
+                    const cacheKey = `${sessionId}:agent:${registeredProject.id}:${routingId.id}`;
+                    try {
+                      sessionAgentModelCache.set(cacheKey, agentModel);
+                    } catch {}
+                    performanceMonitoring.record('totalRouting', performance.now() - routingStart);
+                    return { model: agentModel, scenarioType: 'default' };
+                  }
+                }
+              }
+            }
+          }
+          req.log.debug({ routingId }, `${routingId.type} not found in any registered project`);
         }
-      }
-
-        // Agent exists (or auto-registration finished) but no model configured → use Router.default
-        req.log.debug({ agentId }, 'Agent using Router.default (no model configured)');
-        // Fall through to Router.default below
       } catch (error) {
-        // Unexpected failure - log error and fallback to Router.default (graceful degradation)
-        req.log.error({ error: (error as Error).message, agentId }, 'Agent routing failed, using Router.default');
-        // Fall through to Router.default below
+        req.log.debug({ error: (error as Error).message }, 'Routing system error, using Router.default');
       }
     }
   }
-  // ============ END: Agent System Integration ============
+  // ============ END: Unified Routing System Integration ============
 
   // Story 2.3 AC: Handle edge case where Router.default is not configured
   // Use hardcoded fallback as last resort

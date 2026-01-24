@@ -962,6 +962,85 @@ ${JSON5.stringify(dataWithVersion, { space: 2 })}`;
   }
 
   /**
+   * Get configured model for a workflow by workflow ID - Story 6.3
+   * Searches across all projects to find workflow and return its configured model
+   * @param workflowId - UUID of the workflow
+   * @param projectId - Optional project ID for specific project search
+   * @returns Model string if configured, undefined if not found or not set (Router.default fallback)
+   */
+  async getModelByWorkflowId(workflowId: string, projectId?: string): Promise<string | undefined> {
+    // Validate workflow ID format
+    if (!Validators.isValidWorkflowId(workflowId)) {
+      this.logger.debug(`Invalid workflow ID format: ${workflowId} (expected UUID v4)`);
+      return undefined;
+    }
+
+    const projectsData = await this.loadProjects();
+
+    // Search in specific project if provided
+    if (projectId && projectsData.projects[projectId]) {
+      const project = projectsData.projects[projectId];
+      if (!project.workflows || project.workflows.length === 0) return undefined;
+
+      const workflow = project.workflows.find(w => w.id === workflowId);
+      if (workflow) {
+        // Validate model string format before returning
+        if (workflow.model && !Validators.isValidModelString(workflow.model)) {
+          this.logger.warn(`Invalid model string format for workflow ${workflowId}: ${workflow.model}`);
+          return undefined;
+        }
+        this.logger.debug(`Workflow model lookup: ${workflowId} in ${projectId} = ${workflow.model}`);
+        return workflow.model;
+      }
+    }
+
+    // Search across all projects (O(n×m) - acceptable for cache miss)
+    for (const [projId, project] of Object.entries(projectsData.projects)) {
+      if (!project.workflows || project.workflows.length === 0) continue;
+
+      const workflow = project.workflows.find(w => w.id === workflowId);
+      if (workflow) {
+        if (workflow.model && !Validators.isValidModelString(workflow.model)) {
+          this.logger.warn(`Invalid model string format for workflow ${workflowId}: ${workflow.model}`);
+          return undefined;
+        }
+        this.logger.debug(`Workflow model lookup (cross-project): ${workflowId} in ${projId} = ${workflow.model}`);
+        return workflow.model;
+      }
+    }
+
+    this.logger.debug(`Workflow not found or no model configured: ${workflowId}`);
+    return undefined;
+  }
+
+  /**
+   * Detect which project contains a workflow by workflow ID - Story 6.3
+   * Used for multi-project cache isolation and workflow lookup
+   * @param workflowId - UUID of the workflow
+   * @returns Project ID if found, undefined otherwise
+   */
+  async detectProjectByWorkflowId(workflowId: string): Promise<string | undefined> {
+    if (!Validators.isValidWorkflowId(workflowId)) {
+      this.logger.debug(`Invalid workflow ID format: ${workflowId}`);
+      return undefined;
+    }
+
+    const projectsData = await this.loadProjects();
+    for (const [projectId, project] of Object.entries(projectsData.projects)) {
+      if (!project.workflows || project.workflows.length === 0) continue;
+
+      const workflow = project.workflows.find(w => w.id === workflowId);
+      if (workflow) {
+        this.logger.debug(`Workflow project detected: ${workflowId} in ${projectId}`);
+        return projectId;
+      }
+    }
+
+    this.logger.debug(`Workflow not found in any project: ${workflowId}`);
+    return undefined;
+  }
+
+  /**
    * Auto-register a project from an agent file path - Story 2.5
    * Detects project path from agent file location and registers if not already present
    * Merges in-repo projects.json into global projects.json for zero-config onboarding
