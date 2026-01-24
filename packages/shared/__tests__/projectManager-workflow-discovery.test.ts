@@ -186,6 +186,48 @@ describe('ProjectManager - Workflow Discovery (Story 6.1)', () => {
       expect(Array.isArray(project.workflows)).toBe(true);
       expect(project.workflows.length).toBe(0);
     });
+
+    it('should handle completely empty workflow.yaml gracefully', async () => {
+      const pm = new ProjectManager(TEST_PROJECTS_FILE);
+
+      // Create workflow with completely empty YAML file
+      const workflowDir = path.join(workflowsDir, 'empty-yaml-workflow');
+      await mkdir(workflowDir, { recursive: true });
+      await writeFile(
+        path.join(workflowDir, 'workflow.yaml'),
+        '',
+        'utf-8'
+      );
+
+      // Add and scan project
+      const project = await pm.addProject(testProjectPath);
+
+      // Should still discover workflow with fallback to directory name
+      expect(project.workflows.length).toBe(1);
+      expect(project.workflows[0].name).toBe('empty-yaml-workflow');
+      expect(project.workflows[0].description).toBe('');
+    });
+
+    it('should handle workflow with only whitespace values', async () => {
+      const pm = new ProjectManager(TEST_PROJECTS_FILE);
+
+      // Create workflow with whitespace-only values
+      const workflowDir = path.join(workflowsDir, 'whitespace-workflow');
+      await mkdir(workflowDir, { recursive: true });
+      await writeFile(
+        path.join(workflowDir, 'workflow.yaml'),
+        'name:   \ndescription:   \n',
+        'utf-8'
+      );
+
+      // Add and scan project
+      const project = await pm.addProject(testProjectPath);
+
+      // Should still discover workflow with fallback to directory name for empty name
+      expect(project.workflows.length).toBe(1);
+      expect(project.workflows[0].name).toBe('whitespace-workflow');
+      expect(project.workflows[0].description).toBe('');
+    });
   });
 
   describe('scanProject with workflows', () => {
@@ -212,6 +254,123 @@ describe('ProjectManager - Workflow Discovery (Story 6.1)', () => {
 
       expect(updatedProject.workflows.length).toBe(1);
       expect(updatedProject.workflows[0].name).toBe('new-workflow');
+    });
+
+    it('should store empty workflow ID field correctly', async () => {
+      const pm = new ProjectManager(TEST_PROJECTS_FILE);
+
+      // Create test workflow
+      const workflowDir = path.join(workflowsDir, 'empty-id-workflow');
+      await mkdir(workflowDir, { recursive: true });
+      await writeFile(
+        path.join(workflowDir, 'workflow.yaml'),
+        'name: empty-id-workflow\ndescription: Workflow with empty ID\n',
+        'utf-8'
+      );
+
+      // Add and scan project
+      const project = await pm.addProject(testProjectPath);
+
+      // Verify empty ID is stored correctly
+      expect(project.workflows.length).toBe(1);
+      expect(project.workflows[0].id).toBe('');
+      expect(project.workflows[0].name).toBe('empty-id-workflow');
+
+      // Verify it persists in projects.json
+      const data = await pm.loadProjects();
+      const storedProject = Object.values(data.projects)[0];
+      expect(storedProject.workflows[0].id).toBe('');
+    });
+  });
+
+  describe('rescanProject with workflows (Story 6.1)', () => {
+    it('should detect new workflows during rescan', async () => {
+      const pm = new ProjectManager(TEST_PROJECTS_FILE);
+
+      // Add project initially without workflows
+      await rm(workflowsDir, { recursive: true, force: true });
+      const project = await pm.addProject(testProjectPath);
+      expect(project.workflows.length).toBe(0);
+
+      // Create workflow after initial scan
+      await mkdir(workflowsDir, { recursive: true });
+      const workflowDir = path.join(workflowsDir, 'rescanned-workflow');
+      await mkdir(workflowDir, { recursive: true });
+      await writeFile(
+        path.join(workflowDir, 'workflow.yaml'),
+        'name: rescanned-workflow\ndescription: Discovered during rescan\n',
+        'utf-8'
+      );
+
+      // Rescan project
+      const rescanResult = await pm.rescanProject(project.id);
+
+      expect(rescanResult.newWorkflows).toContain('rescanned-workflow');
+      expect(rescanResult.totalWorkflows).toBe(1);
+    });
+
+    it('should detect deleted workflows during rescan', async () => {
+      const pm = new ProjectManager(TEST_PROJECTS_FILE);
+
+      // Create initial workflow
+      const workflowDir = path.join(workflowsDir, 'deleted-workflow');
+      await mkdir(workflowDir, { recursive: true });
+      await writeFile(
+        path.join(workflowDir, 'workflow.yaml'),
+        'name: deleted-workflow\ndescription: Will be deleted\n',
+        'utf-8'
+      );
+
+      // Add project
+      const project = await pm.addProject(testProjectPath);
+      expect(project.workflows.length).toBe(1);
+
+      // Delete workflow directory
+      await rm(workflowsDir, { recursive: true, force: true });
+
+      // Rescan project
+      const rescanResult = await pm.rescanProject(project.id);
+
+      expect(rescanResult.deletedWorkflows!.length).toBe(1);
+      expect(rescanResult.deletedWorkflows![0].name).toBe('deleted-workflow');
+      expect(rescanResult.totalWorkflows).toBe(0);
+    });
+
+    it('should detect both agent and workflow changes during rescan', async () => {
+      const pm = new ProjectManager(TEST_PROJECTS_FILE);
+
+      // Add project initially without agents or workflows
+      await rm(workflowsDir, { recursive: true, force: true });
+      const project = await pm.addProject(testProjectPath);
+      expect(project.workflows.length).toBe(0);
+      expect(project.agents.length).toBe(0);
+
+      // Create both agent and workflow
+      const agentsDir = path.join(testProjectPath, '_bmad', 'bmm', 'agents');
+      await mkdir(agentsDir, { recursive: true });
+      // Create agent file WITHOUT pre-existing ID - let injectAgentId generate one
+      await writeFile(
+        path.join(agentsDir, 'test-agent.md'),
+        '# Test Agent\n\nTest agent content.\n',
+        'utf-8'
+      );
+
+      await mkdir(workflowsDir, { recursive: true });
+      const workflowDir = path.join(workflowsDir, 'test-workflow');
+      await mkdir(workflowDir, { recursive: true });
+      await writeFile(
+        path.join(workflowDir, 'workflow.yaml'),
+        'name: test-workflow\ndescription: Integration test\n',
+        'utf-8'
+      );
+
+      // Rescan project
+      const rescanResult = await pm.rescanProject(project.id);
+
+      expect(rescanResult.newAgents.length).toBe(1);
+      expect(rescanResult.newWorkflows).toContain('test-workflow');
+      expect(rescanResult.totalAgents).toBe(1);
+      expect(rescanResult.totalWorkflows).toBe(1);
     });
   });
 });

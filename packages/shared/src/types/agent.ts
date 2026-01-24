@@ -55,10 +55,14 @@ export interface ProjectsData {
 /**
  * Rescan result interface (Story 1.4)
  * Returns detected changes during project rescan
+ * Story 6.1: Added workflow change tracking
  */
 export interface RescanResult {
   newAgents: string[];      // Names of new agents discovered
   deletedAgents: AgentConfig[];  // Agents that were deleted from filesystem
   failedAgents: string[];   // Names of agents that failed to process
   totalAgents: number;       // Total agent count after rescan
+  newWorkflows: string[];    // Story 6.1: Names of new workflows discovered
+  deletedWorkflows: WorkflowConfig[];  // Story 6.1: Workflows deleted from filesystem
+  totalWorkflows: number;    // Story 6.1: Total workflow count after rescan
 }

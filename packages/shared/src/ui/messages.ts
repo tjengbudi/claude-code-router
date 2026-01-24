@@ -10,7 +10,7 @@
  * - Color support with TTY detection
  */
 
-import type { AgentConfig } from '../types/agent';
+import type { AgentConfig, WorkflowConfig } from '../types/agent';
 
 // ANSI color codes for consistent output (from existing projectCommand.ts)
 const RESET = "\x1B[0m";
@@ -407,6 +407,7 @@ export function formatProjectList(projects: ProjectListData[]): string {
 
 /**
  * Format scan result for agent discovery
+ * Story 6.1: Extended to include workflow discovery results
  * @param result - Scan result with new, deleted, failed agents and total count
  * @returns Formatted scan result string
  */
@@ -415,25 +416,33 @@ export interface ScanResult {
   deletedAgents: Array<{ name: string; id: string }>;
   failedAgents: string[];
   totalAgents: number;
+  newWorkflows?: string[];  // Story 6.1: New workflow names
+  deletedWorkflows?: WorkflowConfig[];  // Story 6.1: Deleted workflows
+  totalWorkflows?: number;  // Story 6.1: Total workflow count
 }
 
 export function formatScanResult(result: ScanResult): string {
   const lines: string[] = [];
   const box = getBoxDrawing();
 
-  if (result.newAgents.length === 0 && result.deletedAgents.length === 0 && result.failedAgents.length === 0) {
-    return colorize("✓ No changes detected. All agents up to date.", GREEN);
+  const hasAgentChanges = result.newAgents.length > 0 || result.deletedAgents.length > 0 || result.failedAgents.length > 0;
+  const hasWorkflowChanges = result.newWorkflows && result.newWorkflows.length > 0;
+  const hasDeletedWorkflows = result.deletedWorkflows && result.deletedWorkflows.length > 0;
+
+  if (!hasAgentChanges && !hasWorkflowChanges && !hasDeletedWorkflows) {
+    return colorize("✓ No changes detected. All agents and workflows up to date.", GREEN);
   }
 
   lines.push("\n✓ Project rescan complete:\n");
 
+  // Agent changes
   if (result.newAgents.length > 0) {
     lines.push(`  Found ${result.newAgents.length} new agent(s):`);
     result.newAgents.forEach((name, idx) => {
-      const isLast = idx === result.newAgents.length - 1 && result.deletedAgents.length === 0 && result.failedAgents.length === 0;
+      const isLast = idx === result.newAgents.length - 1 && result.deletedAgents.length === 0 && result.failedAgents.length === 0 && !hasWorkflowChanges;
       lines.push(`  ${isLast ? box.LAST : box.BRANCH} ${name}`);
     });
-    if (result.deletedAgents.length > 0 || result.failedAgents.length > 0) {
+    if (result.deletedAgents.length > 0 || result.failedAgents.length > 0 || hasWorkflowChanges) {
       lines.push("");
     }
   }
@@ -441,10 +450,10 @@ export function formatScanResult(result: ScanResult): string {
   if (result.deletedAgents.length > 0) {
     lines.push(`  Removed ${result.deletedAgents.length} deleted agent(s):`);
     result.deletedAgents.forEach((agent, idx) => {
-      const isLast = idx === result.deletedAgents.length - 1 && result.failedAgents.length === 0;
+      const isLast = idx === result.deletedAgents.length - 1 && result.failedAgents.length === 0 && !hasWorkflowChanges;
       lines.push(`  ${isLast ? box.LAST : box.BRANCH} ${agent.name}`);
     });
-    if (result.failedAgents.length > 0) {
+    if (result.failedAgents.length > 0 || hasWorkflowChanges) {
       lines.push("");
     }
   }
@@ -452,12 +461,39 @@ export function formatScanResult(result: ScanResult): string {
   if (result.failedAgents.length > 0) {
     lines.push(`  ${result.failedAgents.length} agent(s) failed to process:`);
     result.failedAgents.forEach((name, idx) => {
-      const isLast = idx === result.failedAgents.length - 1;
+      const isLast = idx === result.failedAgents.length - 1 && !hasWorkflowChanges;
       lines.push(`  ${isLast ? box.LAST : box.BRANCH} ${name}`);
+    });
+    if (hasWorkflowChanges) {
+      lines.push("");
+    }
+  }
+
+  // Story 6.1: Workflow changes
+  if (result.newWorkflows && result.newWorkflows.length > 0) {
+    lines.push(`  Found ${result.newWorkflows.length} new workflow(s):`);
+    result.newWorkflows.forEach((name, idx) => {
+      const isLast = idx === result.newWorkflows!.length - 1 && !hasDeletedWorkflows;
+      lines.push(`  ${isLast ? box.LAST : box.BRANCH} ${name}`);
+    });
+    if (hasDeletedWorkflows) {
+      lines.push("");
+    }
+  }
+
+  if (result.deletedWorkflows && result.deletedWorkflows.length > 0) {
+    lines.push(`  Removed ${result.deletedWorkflows.length} deleted workflow(s):`);
+    result.deletedWorkflows.forEach((workflow, idx) => {
+      const isLast = idx === result.deletedWorkflows!.length - 1;
+      lines.push(`  ${isLast ? box.LAST : box.BRANCH} ${workflow.name}`);
     });
   }
 
+  // Totals
   lines.push(`\n  Total agents: ${result.totalAgents}`);
+  if (result.totalWorkflows !== undefined) {
+    lines.push(`  Total workflows: ${result.totalWorkflows}`);
+  }
 
   return lines.join("\n");
 }

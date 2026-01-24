@@ -392,10 +392,11 @@ ${JSON5.stringify(dataWithVersion, { space: 2 })}`;
             continue;
           }
 
-          // Validate workflow data structure
+          // Handle null/undefined/empty YAML - create workflow with directory name as fallback
+          // Story 6.1: Empty YAML files should still create workflow entries
           if (!workflowData || typeof workflowData !== 'object') {
-            this.logger.warn(`Invalid workflow data in ${yamlPath}: expected object, got ${typeof workflowData}`);
-            continue;
+            this.logger.debug(`Empty or invalid workflow data in ${yamlPath}, using directory name as fallback`);
+            workflowData = { name: undefined, description: undefined };
           }
 
           // Extract metadata
@@ -516,7 +517,8 @@ ${JSON5.stringify(dataWithVersion, { space: 2 })}`;
 
   /**
    * Rescan project to detect new or deleted agents (Story 1.4)
-   * Compares filesystem agents with projects.json entries and updates accordingly
+   * Story 6.1: Extended to detect workflow changes
+   * Compares filesystem agents/workflows with projects.json entries and updates accordingly
    * @param projectId - UUID of the project to rescan
    * @returns RescanResult with detected changes
    * @throws Error if project ID is invalid or project not found
@@ -539,6 +541,7 @@ ${JSON5.stringify(dataWithVersion, { space: 2 })}`;
       throw new Error(`Project not found: ${projectId}`);
     }
 
+    // ==================== AGENT RESCAN (existing logic) ====================
     // Scan filesystem for current agent files
     const agentDir = path.join(project.path, BMAD_FOLDER_NAME, 'bmm', 'agents');
     let filesystemAgentFiles: string[];
@@ -617,6 +620,44 @@ ${JSON5.stringify(dataWithVersion, { space: 2 })}`;
       }
     }
 
+    // ==================== WORKFLOW RESCAN (Story 6.1) ====================
+    // Scan workflows to detect new/deleted workflows
+    const discoveredWorkflows = await this.scanWorkflows(project.path);
+    const filesystemWorkflowNames = new Set(
+      discoveredWorkflows.map(w => w.name)
+    );
+
+    // Extract workflow names from projects.json
+    const currentWorkflowNames = new Set(
+      (project.workflows || []).map(w => w.name)
+    );
+
+    // Detect new workflows (in filesystem, not in projects.json)
+    const newWorkflows = [...filesystemWorkflowNames].filter(
+      name => !currentWorkflowNames.has(name)
+    );
+
+    // Detect deleted workflows (in projects.json, not in filesystem)
+    const deletedWorkflows = (project.workflows || []).filter(
+      workflow => !filesystemWorkflowNames.has(workflow.name)
+    );
+
+    // Remove deleted workflows from project
+    for (const deletedWorkflow of deletedWorkflows) {
+      const index = project.workflows!.findIndex(w => w.name === deletedWorkflow.name);
+      if (index >= 0) {
+        project.workflows!.splice(index, 1);
+        console.info(`ℹ Removed deleted workflow: ${deletedWorkflow.name}`);
+      }
+    }
+
+    // Add discovered workflows (replace entire array to ensure sync)
+    project.workflows = discoveredWorkflows;
+
+    if (newWorkflows.length > 0) {
+      console.info(`✓ New workflow(s) discovered: ${newWorkflows.join(', ')}`);
+    }
+
     // Update timestamp
     project.updatedAt = new Date().toISOString();
 
@@ -628,12 +669,15 @@ ${JSON5.stringify(dataWithVersion, { space: 2 })}`;
     // AC5: Save updated projects.json using atomic write pattern
     await this.saveProjects(data);
 
-    // Return result with detected changes
+    // Return result with detected changes (agents + workflows)
     return {
       newAgents,
       deletedAgents,
       failedAgents,
       totalAgents: project.agents.length,
+      newWorkflows,
+      deletedWorkflows,
+      totalWorkflows: project.workflows!.length,
     } as RescanResult;
   }
 
