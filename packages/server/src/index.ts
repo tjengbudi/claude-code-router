@@ -169,7 +169,7 @@ async function getServer(options: RunOptions = {}) {
   const serverInstance = await createServer({
     jsonPath: CONFIG_FILE,
     initialConfig: {
-      // ...config,
+      ...config, // Pass all config fields first
       providers: config.Providers || config.providers,
       HOST: HOST,
       PORT: servicePort,
