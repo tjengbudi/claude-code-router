@@ -189,7 +189,9 @@ export function formatProjectAddedSuccess(project: ProjectSuccessData): string {
   lines.push("  Next steps:");
   lines.push(`  • Configure agent models: ccr project configure ${project.id}`);
   lines.push("  • Commit and push to share with your team:");
-  lines.push("      git add ~/.claude-code-router/projects.json");
+  lines.push("      mkdir -p .claude-code-router");
+  lines.push("      cp ~/.claude-code-router/projects.json .claude-code-router/projects.json");
+  lines.push("      git add .claude-code-router/projects.json");
   lines.push(`      git commit -m "Add project: ${project.name}"`);
   lines.push("  • Team members will receive configuration on git pull");
 
@@ -227,7 +229,7 @@ export function formatConfigurationSuccess(configuredEntities: ConfiguredEntity[
 
   // Git sharing notice
   lines.push("");
-  lines.push(colorize("Commit projects.json to share configuration with team", DIM));
+  lines.push(colorize("Copy projects.json into your repo to share configuration with team", DIM));
 
   return lines.join("\n");
 }
@@ -539,14 +541,15 @@ export function formatHelpText(): string {
   lines.push("");
   lines.push("Git-Based Configuration Sharing:");
   lines.push("  Projects are stored in ~/.claude-code-router/projects.json");
-  lines.push("  This file is safe to commit to git (contains no API keys)");
-  lines.push("  Share configurations with your team via version control");
-  lines.push("  Team members receive agent routing on git pull (zero-config)");
+  lines.push("  Copy into your repo to share (contains no API keys)");
+  lines.push("  Team members receive routing config on git pull (zero-config)");
   lines.push("");
   lines.push("Examples:");
   lines.push("  ccr project add /home/user/my-project");
   lines.push("  ccr project configure <project-id>");
-  lines.push("  git add ~/.claude-code-router/projects.json");
+  lines.push("  mkdir -p .claude-code-router");
+  lines.push("  cp ~/.claude-code-router/projects.json .claude-code-router/projects.json");
+  lines.push("  git add .claude-code-router/projects.json");
   lines.push("  git commit -m \"Configure agent models\"");
   lines.push("");
   lines.push("Documentation: https://github.com/musistudio/claude-code-router");

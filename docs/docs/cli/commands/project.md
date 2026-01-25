@@ -4,7 +4,7 @@ sidebar_position: 7
 
 # ccr project
 
-Manage projects and configure agent models for automatic routing.
+Manage projects and configure agent and workflow models for automatic routing.
 
 ## Usage
 
@@ -16,7 +16,7 @@ ccr project [command]
 
 ### Add Project
 
-Register a new project and scan for agent files:
+Register a new project and scan for agent files and workflows:
 
 ```bash
 ccr project add <path>
@@ -26,37 +26,45 @@ The `<path>` should be the absolute path to your project directory.
 
 **What it does:**
 - Scans the project for agent files in `.claude/agents/` or `.bmad/bmm/agents/`
+- Scans the project for workflow files in `.bmad/bmm/workflows/*/workflow.yaml`
 - Assigns unique IDs to each agent (injected as `CCR-AGENT-ID` comments)
+- Assigns unique IDs to each workflow (injected as `CCR-WORKFLOW-ID` comments)
 - Registers the project in `~/.claude-code-router/projects.json`
-- Prompts you to configure models for detected agents
+- Use `ccr project configure <id>` to configure models for agents and workflows
 
-**Example:**
+**Example with Agents and Workflows:**
 
 ```bash
 $ ccr project add /home/user/my-project
 
-Scanning /home/user/my-project for agents...
+✓ Project added: my-project (550e8400-e29b-41d4-a716-446655440000)
+  Path: /home/user/my-project
+  Agents discovered: 3
+  Workflows discovered: 2
 
-Found 3 agents:
-  .bmad/bmm/agents/dev.md
-  .bmad/bmm/agents/sm.md
-  .bmad/bmm/agents/ux-designer.md
+  Agents with injected UUIDs:
+  ├─ dev.md → CCR-AGENT-ID: 550e8400-e29b-41d4-a716-446655440001
+  ├─ sm.md → CCR-AGENT-ID: 550e8400-e29b-41d4-a716-446655440002
+  └─ ux-designer.md → CCR-AGENT-ID: 550e8400-e29b-41d4-a716-446655440003
 
-Registering project...
-Project ID: 550e8400-e29b-41d4-a716-446655440000
-Project name: my-project
+  Workflows:
+  ├─ correct-course
+     Keep project on track and resolve blockers
+  └─ create-story
+     Create a story from requirements
 
-Configure agent models (press Enter to use Router.default):
-  dev.md [default]: openai,gpt-4o
-  sm.md [default]: anthropic,claude-haiku
-  ux-designer.md [default]: [skip]
-
-Project registered successfully!
+  Next steps:
+  • Configure agent models: ccr project configure 550e8400-e29b-41d4-a716-446655440000
+  • Commit and push to share with your team:
+      mkdir -p .claude-code-router
+      cp ~/.claude-code-router/projects.json .claude-code-router/projects.json
+      git add .claude-code-router/projects.json
+      git commit -m "Add project: my-project"
 ```
 
 ### List Projects
 
-Display all registered projects with their agents:
+Display all registered projects with their agents and workflows:
 
 ```bash
 ccr project list
@@ -67,24 +75,39 @@ ccr project list
 ```bash
 $ ccr project list
 
-Registered Projects:
+📦 Registered Projects (2)
 
-my-project (550e8400-e29b-41d4-a716-446655440000)
-  Path: /home/user/my-project
-  Agents (3):
-    ├─ dev.md (openai,gpt-4o)
-    ├─ sm.md (anthropic,claude-haiku)
-    └─ ux-designer.md [Router.default]
+1. my-project
+   ID: 550e8400-e29b-41d4-a716-446655440000
+   Path: /home/user/my-project
+   Agents: 3 (2 configured, 1 default)
+   Workflows: 2 (1 configured, 1 default)
+   Agent Details:
+   ├─ dev.md → openai,gpt-4o
+      CCR-AGENT-ID: 550e8400-e29b-41d4-a716-446655440001
+   ├─ sm.md → anthropic,claude-haiku
+      CCR-AGENT-ID: 550e8400-e29b-41d4-a716-446655440002
+   └─ ux-designer.md → [default]
+      CCR-AGENT-ID: 550e8400-e29b-41d4-a716-446655440003
+   Workflow Details:
+   ├─ correct-course → deepseek,deepseek-r1
+   └─ create-story → [default]
 
-another-project (660e8400-e29b-41d4-a716-446655440001)
-  Path: /home/user/another-project
-  Agents (1):
-    └─ analyst.md (deepseek,deepseek-chat)
+2. another-project
+   ID: 660e8400-e29b-41d4-a716-446655440001
+   Path: /home/user/another-project
+   Agents: 1 (1 configured, 0 default)
+   Workflows: 1 (1 configured, 0 default)
+   Agent Details:
+   └─ analyst.md → deepseek,deepseek-chat
+      CCR-AGENT-ID: 660e8400-e29b-41d4-a716-446655440002
+   Workflow Details:
+   └─ sprint-planning → openrouter,anthropic/claude-3.5-sonnet
 ```
 
 ### Configure Project
 
-Interactively configure models for agents in a project:
+Interactively configure models for agents and workflows in a project:
 
 ```bash
 ccr project configure <project-id>
@@ -93,7 +116,7 @@ ccr project configure <project-id>
 You can use either the project name or the UUID.
 
 **What it does:**
-- Displays current agent configurations
+- Displays current agent and workflow configurations
 - Prompts you to change model assignments
 - Updates `~/.claude-code-router/projects.json`
 
@@ -102,23 +125,27 @@ You can use either the project name or the UUID.
 ```bash
 $ ccr project configure my-project
 
-Current configuration for my-project:
+--- Agents ---
+  dev.md → openai,gpt-4o
+  sm.md → anthropic,claude-haiku
+  ux-designer.md → [default]
 
-  dev.md: openai,gpt-4o
-  sm.md: anthropic,claude-haiku
-  ux-designer.md: [Router.default]
+--- Workflows ---
+  correct-course → deepseek,deepseek-r1
+  create-story → [default]
 
-Enter new model (provider,model) or press Enter to keep current:
-  dev.md [openai,gpt-4o]: deepseek,deepseek-reasoner
-  sm.md [anthropic,claude-haiku]: [skip]
-  ux-designer.md [Router.default]: gemini,gemini-1.5-flash
+? Select entity to configure:
+❯ correct-course (workflow)
 
-Configuration updated!
+? Select model for workflow: correct-course
+❯ deepseek,deepseek-r1 (reasoning for complex decisions)
+
+✓ correct-course → deepseek,deepseek-r1
 ```
 
 ### Scan Project
 
-Rescan a project for new or modified agents:
+Rescan a project for new or modified agents and workflows:
 
 ```bash
 ccr project scan <project-id>
@@ -126,38 +153,39 @@ ccr project scan <project-id>
 
 **What it does:**
 - Detects new agent files without `CCR-AGENT-ID` tags
-- Injects unique IDs into new agents
+- Detects new workflow files without `CCR-WORKFLOW-ID` tags
+- Injects unique IDs into new agents and workflows
 - Prompts for model configuration for new agents only
+- Configure workflows later with `ccr project configure <id>`
 - Updates `~/.claude-code-router/projects.json`
 
 **When to use:**
-- After pulling new agents from git
-- After creating new agent files manually
-- When agents aren't being detected
+- After pulling new agents or workflows from git
+- After creating new agent or workflow files manually
+- When agents or workflows aren't being detected
 
 **Example:**
 
 ```bash
 $ ccr project scan my-project
 
-Scanning /home/user/my-project for new agents...
+✓ Project rescan complete:
 
-Found new agent:
-  .bmad/bmm/agents/architect.md
+  Found 1 new agent(s):
+  ├─ architect.md
 
-Injecting agent ID: 770e8400-e29b-41d4-a716-446655440002
+  Found 1 new workflow(s):
+  └─ sprint-planning
 
-Configure model for architect.md:
-  Enter model (provider,model): openrouter,anthropic/claude-3.5-sonnet
-
-Agent registered successfully!
+  Total agents: 4
+  Total workflows: 2
 ```
 
 ## Configuration Files
 
 ### projects.json Schema
 
-The `projects.json` file stores project and agent configurations:
+The `projects.json` file stores project, agent, and workflow configurations:
 
 **Location:** `~/.claude-code-router/projects.json`
 
@@ -181,6 +209,15 @@ The `projects.json` file stores project and agent configurations:
           absolutePath: "/absolute/path/to/agent-filename.md",
           model: "provider,model"  // Optional - uses Router.default if not set
         }
+      },
+      workflows: {
+        "<workflow-uuid>": {
+          id: "<workflow-uuid>",
+          name: "workflow-name",
+          relativePath: ".bmad/bmm/workflows/workflow-name",
+          absolutePath: "/absolute/path/to/workflow-name",
+          model: "provider,model"  // Optional - uses Router.default if not set
+        }
       }
     }
   }
@@ -189,9 +226,10 @@ The `projects.json` file stores project and agent configurations:
 
 **Notes:**
 - File format is JSON5 (supports comments and trailing commas)
-- The `model` field is optional - if omitted, the agent uses `Router.default`
-- This file is local-only (NOT committed to git)
-- Each team member has their own copy with their model preferences
+- The `model` field is optional - if omitted, the agent/workflow uses `Router.default`
+- Local by default; copy into your repo (e.g., `.claude-code-router/projects.json`) to share
+- Each team member can override with their own model preferences
+- No API keys or secrets are stored in this file (safe for local storage)
 
 ### Agent File Format
 
@@ -210,6 +248,24 @@ Agent description and instructions...
 - Do not edit this tag manually
 - Agent files are committed to git (shared across team)
 - Model assignments are NOT stored in agent files (only in `projects.json`)
+
+### Workflow File Format
+
+Workflow files use YAML comments to store metadata in workflow.yaml:
+
+```yaml
+name: my-workflow
+description: "My workflow description"
+# CCR-WORKFLOW-ID: 660e8400-e29b-41d4-a716-446655440000
+
+# Workflow configuration continues...
+```
+
+**Important:**
+- `CCR-WORKFLOW-ID` is injected automatically by CCR
+- Do not edit this tag manually
+- Workflow files are committed to git (shared across team)
+- Model assignments are NOT stored in workflow files (only in `projects.json`)
 
 ## Use Case Examples
 
@@ -233,8 +289,8 @@ EOF
 # 4. Register the project with CCR
 ccr project add ~/my-project
 
-# 5. Configure models when prompted
-dev.md [default]: openai,gpt-4o
+# 5. Configure models
+ccr project configure <project-id>
 
 # 6. Start using Claude Code with agent routing
 ccr code "Help me implement a new feature"
@@ -350,3 +406,56 @@ ux-designer.md [default]: [Enter]
 ### Project path invalid
 
 **Solution:** Use absolute path, not relative. Example: `/home/user/project` not `~/project` or `./project`.
+
+### Workflow not detected during scan
+
+**Solution:**
+1. Verify workflow.yaml exists in `.bmad/bmm/workflows/*/workflow.yaml`
+2. Run `ccr project scan <id>` to rescan
+3. Check that workflow.yaml has valid YAML syntax
+
+**Example:**
+```bash
+# Verify workflow file exists
+ls -la .bmad/bmm/workflows/correct-course/workflow.yaml
+
+# Rescan project
+ccr project scan my-project
+```
+
+### Workflow routing not working
+
+**Solution:**
+1. Check CCR-WORKFLOW-ID is injected in workflow.yaml
+2. Verify workflow model is configured in projects.json
+3. Check logs for routing decisions
+
+**Example:**
+```bash
+# Check workflow file has ID
+cat .bmad/bmm/workflows/correct-course/workflow.yaml
+# Should contain: # CCR-WORKFLOW-ID: uuid
+
+# Verify configuration
+cat ~/.claude-code-router/projects.json | grep workflows
+
+# Check logs
+tail -f ~/.claude-code-router/claude-code-router.log
+```
+
+### Model not applied to workflow
+
+**Solution:**
+1. Run `ccr project list` to see current configuration
+2. Use `ccr project configure <id>` to set workflow model
+3. Verify model string format is `provider,model`
+
+**Example:**
+```bash
+# View current configuration
+ccr project list my-project
+
+# Reconfigure workflow model
+ccr project configure my-project
+# Select workflow and set model (e.g., deepseek,deepseek-r1)
+```

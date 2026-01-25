@@ -14,7 +14,7 @@ The CCR Enhanced Edition introduces significant architectural changes for better
 - Git-based agent sharing instead of UI-based project management
 - Independent model configuration per team member
 - CLI commands instead of web UI for project management
-- `projects.json` is now local-only (not committed to git)
+- `projects.json` is local by default (optionally shared via `.claude-code-router/projects.json`)
 
 ## ccr-custom vs CCR Enhanced
 
@@ -22,7 +22,7 @@ The CCR Enhanced Edition introduces significant architectural changes for better
 |---------|-----------|--------------|
 | **Project Management** | Web UI | CLI commands (`ccr project`) |
 | **Agent Sharing** | Manual configuration | Git-based workflow |
-| **projects.json** | In repository | Local-only (`~/.claude-code-router/`) |
+| **projects.json** | In repository | Local by default (`~/.claude-code-router/`), optional repo copy |
 | **Model Assignment** | Via UI | Via CLI (`ccr project configure`) |
 | **Agent Tags** | `CCR-AGENT-MODEL` in files | `CCR-AGENT-ID` in files only |
 | **Team Collaboration** | Shared config | Independent config per member |
@@ -156,11 +156,11 @@ grep -r "CCR-AGENT-MODEL" .bmad/bmm/agents/
 
 **Why remove `CCR-AGENT-MODEL` tags?**
 
-CCR Enhanced stores model assignments in `projects.json` (local-only), not in agent files. This allows each team member to have their own model preferences.
+CCR Enhanced stores model assignments in `projects.json` (local by default), not in agent files. Teams can optionally share a repo copy under `.claude-code-router/projects.json`.
 
-### Step 5: Remove projects.json from Git Tracking
+### Step 5: Remove projects.json from Git Tracking (optional)
 
-**If `projects.json` was committed to your repository:**
+**If `projects.json` was committed to your repository and you do not plan to share a repo copy:**
 
 ```bash
 # Remove from git tracking (keep local file)
@@ -181,7 +181,7 @@ git commit -m "chore: remove projects.json from version control"
 ccr project add ~/my-project
 
 # CCR will scan for agents and inject CCR-AGENT-ID tags
-# It will prompt you to configure models for each agent
+# Configure models with: ccr project configure <project-id>
 ```
 
 **Example output:**
@@ -307,9 +307,9 @@ nano ~/.claude-code-router/projects.json
 
 **ccr-custom:** `projects.json` in repository root
 
-**CCR Enhanced:** `projects.json` in `~/.claude-code-router/`
+**CCR Enhanced:** `projects.json` in `~/.claude-code-router/` (optional repo copy at `.claude-code-router/projects.json`)
 
-**Migration:** Remove from git, let CCR create new one
+**Migration:** Remove from git root, let CCR create new one (optionally share repo copy)
 
 ### 3. Agent Tag Format Changed
 
@@ -323,7 +323,7 @@ nano ~/.claude-code-router/projects.json
 
 **ccr-custom:** In agent files (`CCR-AGENT-MODEL` tag)
 
-**CCR Enhanced:** In `projects.json` (local-only)
+**CCR Enhanced:** In `projects.json` (local by default)
 
 **Migration:** Configure via `ccr project configure <id>`
 

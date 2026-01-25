@@ -350,7 +350,7 @@ correct-course: gemini,gemini-1.5-flash
 1. Check CCR-WORKFLOW-ID is in workflow.yaml:
    ```bash
    cat .bmad/bmm/workflows/correct-course/workflow.yaml
-   # Should contain: # <!-- CCR-WORKFLOW-ID: uuid -->
+   # Should contain: # CCR-WORKFLOW-ID: uuid
    ```
 
 2. Verify workflow model is configured:

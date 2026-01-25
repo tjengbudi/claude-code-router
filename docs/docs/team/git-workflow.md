@@ -17,8 +17,8 @@ This guide explains how teams share agent definitions using git, enabling zero-s
 
 ### Current Architecture (Story 4.5+)
 - Agent `.md` files with `CCR-AGENT-ID` tags are committed to git
-- `projects.json` stays in `~/.claude-code-router/` (local-only, NOT committed)
-- Each team member configures their own model assignments independently
+- `projects.json` is local by default; optionally share via `.claude-code-router/projects.json`
+- Each team member can override model assignments independently
 
 ### Why the Change?
 1. **Independent model preferences**: Each developer can use their preferred models
@@ -31,8 +31,8 @@ This guide explains how teams share agent definitions using git, enabling zero-s
 The CCR agent system uses a **git-based workflow** for sharing agent definitions:
 
 - **Agent .md files** with `CCR-AGENT-ID` tags are committed to git (shared across team)
-- **projects.json** stays in `~/.claude-code-router/` (local-only, NOT committed)
-- Each team member configures their own model assignments independently
+- **projects.json** is local by default; optionally shared via `.claude-code-router/projects.json`
+- Each team member can override model assignments independently
 
 ## What's Shared vs. What's Local
 
@@ -41,8 +41,8 @@ The CCR agent system uses a **git-based workflow** for sharing agent definitions
 - CCR-AGENT-ID tags injected into agent files
 - Agent structure and definitions
 
-❌ **NOT shared (local to each team member):**
-- `projects.json` (stays in `~/.claude-code-router/`)
+❌ **NOT shared by default (local to each team member):**
+- `projects.json` in `~/.claude-code-router/`
 - Model assignments (each team member chooses their own)
 - API keys and secrets
 
@@ -55,8 +55,11 @@ Git-Tracked Repository:
 │   ├── sm.md               # Contains: <!-- CCR-AGENT-ID: uuid -->
 │   └── new-agent.md        # New agents shared via git
 
-Local Only (~/.claude-code-router/):
+Local Default (~/.claude-code-router/):
 └── projects.json           # Each team member has their own copy
+
+Optional Repo Share (.claude-code-router/):
+└── projects.json           # Shared defaults (can be overridden locally)
 ```
 
 ## Team Workflow
@@ -202,12 +205,12 @@ This agent handles development tasks.
 <!-- CCR-AGENT-ID: 550e8400-e29b-41d4-a716-446655440000 -->
 ```
 
-### projects.json (local, NOT committed)
+### projects.json (local by default, optional shared copy)
 
 ```json5
 // Project configurations for CCR agent system
 // Schema version: 1.0.0
-// This file is local-only (NOT committed to git)
+// This file is local by default; optionally shared via .claude-code-router/projects.json
 {
   schemaVersion: "1.0.0",
   projects: {

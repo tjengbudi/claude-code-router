@@ -498,7 +498,7 @@ A: Commit agent `.md` files to git. Each team member runs `ccr project scan` aft
 
 **Q: Is projects.json committed to git?**
 
-A: No, `projects.json` stays in `~/.claude-code-router/` (local-only). Only agent files are committed.
+A: By default, no. `projects.json` lives in `~/.claude-code-router/`. If you want to share defaults, copy it into your repo (e.g., `.claude-code-router/projects.json`) and commit that file.
 
 ### Configuration Questions
 

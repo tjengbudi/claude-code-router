@@ -312,7 +312,7 @@ ccr model
 - ❌ Share API keys in chat or email
 - ❌ Put API keys in environment-specific config files that get committed
 - ❌ Hard-code API keys in scripts
-- ❌ Commit `projects.json` (it's local-only in `~/.claude-code-router/`)
+- ❌ Commit `~/.claude-code-router/projects.json` directly (copy into `.claude-code-router/projects.json` if sharing)
 
 ## Checklist
 
