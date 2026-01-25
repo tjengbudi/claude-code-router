@@ -477,9 +477,9 @@ ${JSON5.stringify(dataWithVersion, { space: 2 })}`;
 
     const workflows: WorkflowConfig[] = [];
 
-    // Use glob to find all workflow.yaml files
+    // Use glob to find all workflow.yaml files (recursive scan for nested directories)
     try {
-      const workflowFiles = await glob('*/workflow.yaml', {
+      const workflowFiles = await glob('**/workflow.yaml', {
         cwd: workflowsDir,
         absolute: false,
         windowsPathsNoEscape: true
@@ -547,9 +547,11 @@ ${JSON5.stringify(dataWithVersion, { space: 2 })}`;
           }
 
           // Extract metadata
+          // Use basename of workflowDir as the workflow name (last folder in path)
+          const workflowName = path.basename(workflowDir);
           const workflow: WorkflowConfig = {
             id: workflowId, // Story 6.2: Now populated
-            name: workflowData.name || workflowDir,
+            name: workflowData.name || workflowName,
             description: workflowData.description || '',
             relativePath: path.join(BMAD_FOLDER_NAME, 'bmm', 'workflows', workflowDir),
             absolutePath: absoluteWorkflowPath
