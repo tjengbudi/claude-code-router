@@ -8,6 +8,7 @@ import type { ProjectConfig, ProjectsData, AgentConfig, RescanResult, WorkflowCo
 import { AGENT_ID_REGEX, PROJECTS_SCHEMA_VERSION, BMAD_FOLDER_NAME } from './constants';
 import { Validators } from './validation';
 import { createLogger } from './logging/logger';
+import { ModelInheritanceMode } from './types/agent';
 
 /**
  * Agent ID tag pattern for injection into markdown files
@@ -549,12 +550,21 @@ ${JSON5.stringify(dataWithVersion, { space: 2 })}`;
           // Extract metadata
           // Use basename of workflowDir as the workflow name (last folder in path)
           const workflowName = path.basename(workflowDir);
+
+          // Story 7.1: Extract and validate modelInheritance
+          let modelInheritance: any = workflowData.modelInheritance;
+          if (modelInheritance !== undefined && !Validators.isValidInheritanceMode(modelInheritance)) {
+            this.logger.warn(`Invalid modelInheritance in ${yamlPath}: ${modelInheritance}. Defaulting to undefined.`);
+            modelInheritance = undefined;
+          }
+
           const workflow: WorkflowConfig = {
             id: workflowId, // Story 6.2: Now populated
             name: workflowData.name || workflowName,
             description: workflowData.description || '',
             relativePath: path.join(BMAD_FOLDER_NAME, 'bmm', 'workflows', workflowDir),
-            absolutePath: absoluteWorkflowPath
+            absolutePath: absoluteWorkflowPath,
+            modelInheritance: modelInheritance, // Story 7.1
           };
 
           workflows.push(workflow);

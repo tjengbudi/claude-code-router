@@ -10,7 +10,16 @@ export interface AgentConfig {
 }
 
 /**
+ * Model inheritance mode for workflows (Story 7.1)
+ * - 'inherit': Use parent's model configuration
+ * - 'default': Use Router.default fallback
+ * - 'specific': Use workflow's own model configuration
+ */
+export type ModelInheritanceMode = 'inherit' | 'default' | 'specific';
+
+/**
  * Workflow metadata interface (Story 6.1)
+ * Story 7.1: Extended with modelInheritance field
  */
 export interface WorkflowConfig {
   id: string;              // UUID v4 (will be added in Story 6.2)
@@ -19,6 +28,20 @@ export interface WorkflowConfig {
   relativePath: string;    // e.g., ".bmad/bmm/workflows/correct-course"
   absolutePath: string;    // Full path to workflow directory
   model?: string;          // Optional model assignment (added in Story 6.4)
+  modelInheritance?: ModelInheritanceMode;  // Story 7.1: Model inheritance mode
+}
+
+/**
+ * Routing context for parent-child model tracking (Story 7.1, Story 7.2)
+ * Used when workflows spawn other workflows and need to track model inheritance
+ * Story 7.2: Added parentType field to distinguish between agent and workflow parents
+ */
+export interface RoutingContext {
+  currentId: string;       // Current agent/workflow ID
+  currentModel: string;    // Active model for current entity
+  parentId?: string;       // Optional parent agent/workflow ID
+  parentModel?: string;    // Optional parent's model for inheritance
+  parentType?: 'agent' | 'workflow';  // Story 7.2: Parent entity type for context propagation
 }
 
 /**

@@ -1,18 +1,18 @@
-import { describe, it, test, expect, beforeEach, jest } from '@jest/globals';
-import { extractAgentId, extractSessionId } from '../src/utils/agentDetection';
+import { describe, it, test, expect, beforeEach, vi } from 'vitest';
+import { extractAgentId, extractSessionId, extractParentContext } from '../src/utils/agentDetection';
 
 // Mock logger for testing
 const mockLogger = {
-  debug: jest.fn(),
-  warn: jest.fn(),
-  info: jest.fn(),
-  error: jest.fn(),
+  debug: vi.fn(),
+  warn: vi.fn(),
+  info: vi.fn(),
+  error: vi.fn(),
 };
 
 describe('extractAgentId()', () => {
   beforeEach(() => {
     // Clear mock calls before each test
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   // Priority: P0
@@ -675,6 +675,285 @@ describe('Story 3.1: Session-Based Caching', () => {
       const avgTime = (endTime - startTime) / iterations;
 
       expect(avgTime).toBeLessThan(1);
+    });
+  });
+});
+
+// ============ START: Story 7.2 Tests - Parent Context Propagation ============
+// These tests verify parent context extraction for workflow model inheritance
+
+describe('Story 7.2: Parent Context Propagation', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  describe('extractParentContext()', () => {
+    // Priority: P0 - AC5.1: Test valid metadata case
+    test('7.2-AC5-001: should extract parent context from valid metadata', () => {
+      // Given: A request with valid parent context metadata
+      // When: Extracting parent context from the request
+      // Then: Should return parent context with all fields
+
+      const req = {
+        body: {
+          metadata: {
+            parent_id: '550e8400-e29b-41d4-a716-446655440000',
+            parent_model: 'anthropic,claude-sonnet-4',
+            parent_type: 'agent'
+          }
+        }
+      };
+
+      const result = extractParentContext(req, mockLogger);
+      expect(result).toEqual({
+        parentId: '550e8400-e29b-41d4-a716-446655440000',
+        parentModel: 'anthropic,claude-sonnet-4',
+        parentType: 'agent'
+      });
+    });
+
+    // Priority: P0 - AC5.2: Test missing metadata case
+    test('7.2-AC5-002: should return undefined when metadata is missing', () => {
+      // Given: A request without metadata field
+      // When: Extracting parent context from the request
+      // Then: Should return undefined gracefully (not an error)
+
+      const req = { body: {} };
+
+      const result = extractParentContext(req, mockLogger);
+      expect(result).toBeUndefined();
+    });
+
+    // Priority: P0 - AC5.3: Test invalid parent_model case
+    test('7.2-AC5-003: should return undefined for invalid parent_model format', () => {
+      // Given: A request with invalid parent_model format
+      // When: Extracting parent context from the request
+      // Then: Should return undefined and log warning
+
+      const req = {
+        body: {
+          metadata: {
+            parent_id: '550e8400-e29b-41d4-a716-446655440000',
+            parent_model: 'invalid-format',
+            parent_type: 'agent'
+          }
+        }
+      };
+
+      const result = extractParentContext(req, mockLogger);
+      expect(result).toBeUndefined();
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        { parentModel: 'invalid-format' },
+        'Invalid parent_model format in metadata'
+      );
+    });
+
+    // Priority: P0 - AC5.4: Test malformed metadata case
+    test('7.2-AC5-004: should return undefined for incomplete metadata', () => {
+      // Given: A request with only some parent context fields
+      // When: Extracting parent context from the request
+      // Then: Should return undefined and log debug message
+
+      const req = {
+        body: {
+          metadata: {
+            parent_id: '550e8400-e29b-41d4-a716-446655440000',
+            parent_model: 'anthropic,claude-sonnet-4'
+            // Missing parent_type
+          }
+        }
+      };
+
+      const result = extractParentContext(req, mockLogger);
+      expect(result).toBeUndefined();
+      expect(mockLogger.debug).toHaveBeenCalledWith(
+        { metadata: req.body.metadata },
+        'Parent context incomplete (missing required fields)'
+      );
+    });
+
+    // Priority: P1 - AC4.1: Test graceful handling without errors
+    test('7.2-AC4-001: should not throw errors for malformed request', () => {
+      // Given: A completely malformed request
+      // When: Extracting parent context from the request
+      // Then: Should return undefined without throwing
+
+      const req = undefined;
+
+      expect(() => extractParentContext(req, mockLogger)).not.toThrow();
+      const result = extractParentContext(req, mockLogger);
+      expect(result).toBeUndefined();
+    });
+
+    // Priority: P1 - AC4.2: Test invalid parent_type handling
+    test('7.2-AC4-002: should return undefined for invalid parent_type', () => {
+      // Given: A request with invalid parent_type value
+      // When: Extracting parent context from the request
+      // Then: Should return undefined and log warning
+
+      const req = {
+        body: {
+          metadata: {
+            parent_id: '550e8400-e29b-41d4-a716-446655440000',
+            parent_model: 'anthropic,claude-sonnet-4',
+            parent_type: 'invalid'
+          }
+        }
+      };
+
+      const result = extractParentContext(req, mockLogger);
+      expect(result).toBeUndefined();
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        { parentType: 'invalid' },
+        'Invalid parent_type in metadata (must be "agent" or "workflow")'
+      );
+    });
+
+    // Priority: P1 - AC2: Test different parent types
+    test('7.2-AC2-001: should extract parent context for workflow parent', () => {
+      // Given: A request with workflow as parent type
+      // When: Extracting parent context from the request
+      // Then: Should return parent context with parent_type="workflow"
+
+      const req = {
+        body: {
+          metadata: {
+            parent_id: '7c9e6679-7425-40de-944b-e07fc1f90ae7',
+            parent_model: 'openai,gpt-4o',
+            parent_type: 'workflow'
+          }
+        }
+      };
+
+      const result = extractParentContext(req, mockLogger);
+      expect(result).toEqual({
+        parentId: '7c9e6679-7425-40de-944b-e07fc1f90ae7',
+        parentModel: 'openai,gpt-4o',
+        parentType: 'workflow'
+      });
+    });
+
+    // Priority: P1 - Test various valid model formats
+    test('7.2-AC3-001: should accept various valid model formats', () => {
+      // Given: Requests with different valid model formats
+      // When: Extracting parent context from the requests
+      // Then: Should extract all valid formats
+
+      const validModels = [
+        'anthropic,claude-sonnet-4',
+        'openai,gpt-4o',
+        'google,gemini-2.0-flash',
+        'deepseek,deepseek-chat'
+      ];
+
+      for (const model of validModels) {
+        const req = {
+          body: {
+            metadata: {
+              parent_id: '550e8400-e29b-41d4-a716-446655440000',
+              parent_model: model,
+              parent_type: 'agent'
+            }
+          }
+        };
+
+        const result = extractParentContext(req, mockLogger);
+        expect(result?.parentModel).toBe(model);
+      }
+    });
+
+    // Priority: P1 - Test empty string handling
+    test('7.2-AC4-003: should return undefined for empty string fields', () => {
+      // Given: A request with empty string in required fields
+      // When: Extracting parent context from the request
+      // Then: Should return undefined (empty strings are falsy)
+
+      const req = {
+        body: {
+          metadata: {
+            parent_id: '550e8400-e29b-41d4-a716-446655440000',
+            parent_model: '',  // Empty string
+            parent_type: 'agent'
+          }
+        }
+      };
+
+      const result = extractParentContext(req, mockLogger);
+      expect(result).toBeUndefined();
+    });
+
+    // Priority: P2 - Test without logger
+    test('7.2-AC4-004: should work without logger parameter', () => {
+      // Given: A request with valid metadata and no logger
+      // When: Extracting parent context without logger
+      // Then: Should not throw and return parent context
+
+      const req = {
+        body: {
+          metadata: {
+            parent_id: '550e8400-e29b-41d4-a716-446655440000',
+            parent_model: 'anthropic,claude-sonnet-4',
+            parent_type: 'agent'
+          }
+        }
+      };
+
+      expect(() => extractParentContext(req)).not.toThrow();
+      const result = extractParentContext(req);
+      expect(result).toEqual({
+        parentId: '550e8400-e29b-41d4-a716-446655440000',
+        parentModel: 'anthropic,claude-sonnet-4',
+        parentType: 'agent'
+      });
+    });
+
+    // Priority: P1 - Performance test
+    test('7.2-NFR-P1-001: should extract parent context in less than 1ms', () => {
+      // Given: A request with valid parent context
+      // When: Extracting parent context 1000 times
+      // Then: Average extraction time should be < 1ms
+
+      const req = {
+        body: {
+          metadata: {
+            parent_id: '550e8400-e29b-41d4-a716-446655440000',
+            parent_model: 'anthropic,claude-sonnet-4',
+            parent_type: 'agent'
+          }
+        }
+      };
+
+      const iterations = 1000;
+      const startTime = Date.now();
+
+      for (let i = 0; i < iterations; i++) {
+        extractParentContext(req);
+      }
+
+      const endTime = Date.now();
+      const avgTime = (endTime - startTime) / iterations;
+
+      expect(avgTime).toBeLessThan(1);
+    });
+
+    // Priority: P0 - Backward compatibility test
+    test('7.2-AC2-003: existing workflows without metadata should still work', () => {
+      // Given: A request from direct workflow invocation (no parent context)
+      // When: Extracting parent context from the request
+      // Then: Should return undefined without errors (backward compatibility)
+
+      const req = {
+        body: {
+          system: [{ type: 'text', text: 'Direct workflow request' }],
+          messages: [{ role: 'user', content: 'Run workflow' }]
+          // No metadata field
+        }
+      };
+
+      const result = extractParentContext(req, mockLogger);
+      expect(result).toBeUndefined();
+      // No errors should be logged (this is expected scenario)
+      expect(mockLogger.warn).not.toHaveBeenCalled();
     });
   });
 });

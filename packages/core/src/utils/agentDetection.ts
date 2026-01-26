@@ -1,5 +1,40 @@
 import { Validators } from "@CCR/shared";
 
+// ============ WORKFLOW SPAWN POINTS (Story 7.2) ============
+// The following are identified workflow spawn points where parent context
+// metadata should ideally be injected. Note: CCR does not control these spawn
+// points - they are managed by Claude Code upstream. This documentation is
+// provided for reference and potential future upstream coordination.
+//
+// 1. SKILL TOOL INVOCATION:
+//    - Workflows are invoked via /workflow-name commands (e.g., /party-mode)
+//    - Spawn point: Claude Code's Skill tool implementation
+//    - Metadata injection would happen in Claude Code's request builder
+//
+// 2. TASK TOOL WORKFLOW EXECUTION:
+//    - Task tool can spawn workflows with specific parameters
+//    - Spawn point: Claude Code's Task tool implementation
+//    - Metadata injection would happen in Claude Code's request builder
+//
+// 3. AGENT → WORKFLOW TRANSITIONS:
+//    - When an agent calls a workflow via Skill/Task tool
+//    - Spawn point: Agent's tool invocation handler
+//    - Metadata injection would use agent's current ID and model
+//
+// METADATA INJECTION EXAMPLE (for upstream implementation):
+// When spawning workflow from agent, Claude Code should inject:
+//   req.body.metadata = {
+//     ...req.body.metadata,
+//     parent_id: currentAgentId,
+//     parent_model: currentModel,
+//     parent_type: 'agent'
+//   };
+//
+// PARENT CONTEXT EXTRACTION:
+// The extractParentContext() function below reads this metadata (if present)
+// to enable workflow model inheritance via Router.default or explicit configuration.
+// ============ END: WORKFLOW SPAWN POINTS ============
+
 // Story 6.3: Pre-compiled regex patterns for routing ID extraction (performance optimization)
 const AGENT_ID_PATTERN = /<!-- CCR-AGENT-ID: ([a-fA-F0-9-]+) -->/i;
 const WORKFLOW_ID_PATTERN = /<!-- CCR-WORKFLOW-ID: ([a-fA-F0-9-]+) -->/i;
@@ -199,4 +234,76 @@ export const extractSessionId = (req: AgentDetectionRequest): string => {
 export const extractAgentId = (req: AgentDetectionRequest, log?: Logger): string | undefined => {
   const result = extractRoutingId(req, log);
   return result?.type === 'agent' ? result.id : undefined;
+};
+
+/**
+ * Extract parent context from request metadata - Story 7.2
+ * Extracts parent routing information (parent_id, parent_model, parent_type) from request metadata
+ * Used for workflow model inheritance when workflows are spawned from agents
+ *
+ * @param req - Claude Code API request object
+ * @param log - Logger instance for debugging
+ * @returns Object with parentId, parentModel, parentType if valid, undefined if missing/invalid
+ *
+ * @performance < 1ms extraction time (simple property access)
+ * @security Validates parent_model format to prevent injection attacks
+ *
+ * @example
+ * // Request with parent context metadata
+ * const parentContext = extractParentContext(req);
+ * if (parentContext) {
+ *   // Workflow was spawned from agent with model configuration
+ *   console.log(`Parent: ${parentContext.parentId} using ${parentContext.parentModel}`);
+ * }
+ *
+ * @example
+ * // Request without parent context (direct workflow invocation)
+ * const parentContext = extractParentContext(req);
+ * if (!parentContext) {
+ *   // Use default routing behavior
+ * }
+ */
+export const extractParentContext = (
+  req: AgentDetectionRequest,
+  log?: Logger
+): { parentId: string; parentModel: string; parentType: 'agent' | 'workflow' } | undefined => {
+  // Graceful handling: missing metadata is not an error
+  if (!req?.body?.metadata) {
+    return undefined;
+  }
+
+  const parentId = req.body.metadata.parent_id;
+  const parentModel = req.body.metadata.parent_model;
+  const parentType = req.body.metadata.parent_type;
+
+  // Validate all required fields are present
+  if (!parentId || !parentModel || !parentType) {
+    if (log?.debug) {
+      log.debug({ metadata: req.body.metadata }, 'Parent context incomplete (missing required fields)');
+    }
+    return undefined;
+  }
+
+  // Validate parent_model format (e.g., "provider,model")
+  // Using Validators from @CCR/shared
+  if (!Validators.isValidModel(parentModel)) {
+    if (log?.warn) {
+      log.warn({ parentModel }, 'Invalid parent_model format in metadata');
+    }
+    return undefined;
+  }
+
+  // Validate parent_type is either 'agent' or 'workflow'
+  if (parentType !== 'agent' && parentType !== 'workflow') {
+    if (log?.warn) {
+      log.warn({ parentType }, 'Invalid parent_type in metadata (must be "agent" or "workflow")');
+    }
+    return undefined;
+  }
+
+  return {
+    parentId,
+    parentModel,
+    parentType
+  };
 };
