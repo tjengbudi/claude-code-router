@@ -117,7 +117,8 @@ export async function executeCodeCommand(
     argsArr,
     {
       env: {
-        ...process.env,
+        ...process.env,  // System environment (base layer)
+        ...env,          // CCR-specific variables (overrides system env to ensure routing)
       },
       stdio: stdioConfig,
       shell: true,

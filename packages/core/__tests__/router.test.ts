@@ -48,8 +48,8 @@ describe('Story 3.1: Router Integration with Session-Based Caching', () => {
     const project1Path = path.join(TEST_DIR, 'project1');
     const project2Path = path.join(TEST_DIR, 'project2');
 
-    await fs.mkdir(path.join(project1Path, '.bmad', 'bmm', 'agents'), { recursive: true });
-    await fs.mkdir(path.join(project2Path, '.bmad', 'bmm', 'agents'), { recursive: true });
+    await fs.mkdir(path.join(project1Path, '_bmad', 'bmm', 'agents'), { recursive: true });
+    await fs.mkdir(path.join(project2Path, '_bmad', 'bmm', 'agents'), { recursive: true });
 
     const project1 = await projectManager.addProject(project1Path);
     const project2 = await projectManager.addProject(project2Path);
@@ -58,8 +58,8 @@ describe('Story 3.1: Router Integration with Session-Based Caching', () => {
     project2Id = project2.id;
 
     // Create agent files
-    const agent1Path = path.join(project1Path, '.bmad', 'bmm', 'agents', 'agent1.md');
-    const agent2Path = path.join(project2Path, '.bmad', 'bmm', 'agents', 'agent2.md');
+    const agent1Path = path.join(project1Path, '_bmad', 'bmm', 'agents', 'agent1.md');
+    const agent2Path = path.join(project2Path, '_bmad', 'bmm', 'agents', 'agent2.md');
 
     await fs.writeFile(agent1Path, '# Agent 1\n\nTest agent 1', 'utf-8');
     await fs.writeFile(agent2Path, '# Agent 2\n\nTest agent 2', 'utf-8');
@@ -809,13 +809,13 @@ describe('Story 3.1: Router Integration with Session-Based Caching', () => {
       const iterations = 10000;
       const times: number[] = [];
 
-      // Simulate hasAgentTag check from router.ts line 221
+      // Simulate hasRoutingTag check from router.ts
       for (let i = 0; i < iterations; i++) {
         const start = performance.now();
-        const hasAgentTag = 'normal request without agent tag'.includes('CCR-AGENT-ID');
+        const hasRoutingTag = 'normal request without agent tag'.includes('CCR-');
         times.push(performance.now() - start);
         // Early exit - no further processing
-        expect(hasAgentTag).toBe(false);
+        expect(hasRoutingTag).toBe(false);
       }
 
       const avgTime = times.reduce((a, b) => a + b, 0) / times.length;
@@ -824,6 +824,76 @@ describe('Story 3.1: Router Integration with Session-Based Caching', () => {
       // Early exit should be extremely fast
       expect(avgTime).toBeLessThan(0.01); // < 0.01ms average
       expect(maxTime).toBeLessThan(20); // < 20ms worst case (CI-friendly)
+    });
+
+    // Priority: P0
+    test('5.3-AC3-002: should detect routing tags beyond system[0]', async () => {
+      // Given: Routing tags present outside system[0]
+      // When: Simulating hasRoutingTag logic
+      // Then: Should detect CCR- tags in system[1] or messages
+
+      const hasRoutingTag = (req: any): boolean =>
+        (Array.isArray(req.body.system) &&
+          req.body.system.some(
+            (block: any) =>
+              block?.type === 'text' &&
+              typeof block.text === 'string' &&
+              block.text.includes('CCR-')
+          )) ||
+        (Array.isArray(req.body.messages) &&
+          req.body.messages.some((message: any) => {
+            if (typeof message.content === 'string') {
+              return message.content.includes('CCR-');
+            }
+            if (Array.isArray(message.content)) {
+              return message.content.some((item: any) => {
+                if (typeof item === 'string') {
+                  return item.includes('CCR-');
+                }
+                return (
+                  item &&
+                  typeof item === 'object' &&
+                  item.type === 'text' &&
+                  typeof item.text === 'string' &&
+                  item.text.includes('CCR-')
+                );
+              });
+            }
+            return false;
+          }));
+
+      const systemSecondBlock = {
+        body: {
+          system: [
+            { type: 'text', text: 'no routing tag here' },
+            { type: 'text', text: '<!-- CCR-AGENT-ID: 550e8400-e29b-41d4-a716-446655440000 -->' },
+          ],
+          messages: [],
+        },
+      };
+
+      const messageArrayContent = {
+        body: {
+          system: [{ type: 'text', text: 'no routing tag here' }],
+          messages: [
+            {
+              role: 'user',
+              content: [{ type: 'text', text: '<!-- CCR-WORKFLOW-ID: 550e8400-e29b-41d4-a716-446655440000 -->' }],
+            },
+          ],
+        },
+      };
+
+      const noTags = {
+        body: {
+          system: [{ type: 'text', text: 'no routing tag here' }],
+          messages: [{ role: 'user', content: 'still no tag' }],
+        },
+      };
+
+      expect(hasRoutingTag(systemSecondBlock)).toBe(true);
+      expect(hasRoutingTag(messageArrayContent)).toBe(true);
+      expect(hasRoutingTag(noTags)).toBe(false);
     });
 
     // Priority: P0

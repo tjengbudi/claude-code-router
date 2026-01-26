@@ -3,6 +3,7 @@ import { sessionUsageCache, Usage } from "./cache";
 import { readFile } from "fs/promises";
 import { opendir, stat } from "fs/promises";
 import { join } from "path";
+import { homedir } from "os";
 import { CLAUDE_PROJECTS_DIR, HOME_DIR, PROJECTS_FILE, ProjectManager, Validators } from "@CCR/shared";
 
 // ============ START: Agent System Integration (Story 2.3) ============
@@ -40,6 +41,14 @@ interface MessageCreateParamsBase {
 }
 
 const enc = get_encoding("cl100k_base");
+
+// Helper function to resolve tilde (~) in file paths
+function resolveTildePath(filePath: string): string {
+  if (filePath.startsWith('~/')) {
+    return join(homedir(), filePath.slice(2));
+  }
+  return filePath;
+}
 
 export const calculateTokenCount = (
   messages: MessageParam[],
@@ -219,7 +228,35 @@ const getUseModel = async (
   const routingStart = performance.now();
 
   // Early exit optimization: Check for routing tags (< 1ms for non-BMM users)
-  const hasRoutingTag = req.body.system?.[0]?.text?.includes('CCR-');
+  const hasRoutingTag =
+    (Array.isArray(req.body.system) &&
+      req.body.system.some(
+        (block: any) =>
+          block?.type === 'text' &&
+          typeof block.text === 'string' &&
+          block.text.includes('CCR-')
+      )) ||
+    (Array.isArray(req.body.messages) &&
+      req.body.messages.some((message: any) => {
+        if (typeof message.content === 'string') {
+          return message.content.includes('CCR-');
+        }
+        if (Array.isArray(message.content)) {
+          return message.content.some((item: any) => {
+            if (typeof item === 'string') {
+              return item.includes('CCR-');
+            }
+            return (
+              item &&
+              typeof item === 'object' &&
+              item.type === 'text' &&
+              typeof item.text === 'string' &&
+              item.text.includes('CCR-')
+            );
+          });
+        }
+        return false;
+      }));
 
   if (hasRoutingTag) {
     const routingDetectionStart = performance.now();
@@ -392,7 +429,9 @@ export const router = async (req: any, _res: any, context: RouterContext) => {
     const customRouterPath = configService.get("CUSTOM_ROUTER_PATH");
     if (customRouterPath) {
       try {
-        const customRouter = require(customRouterPath);
+        // Resolve tilde (~) in path before require
+        const resolvedPath = resolveTildePath(customRouterPath);
+        const customRouter = require(resolvedPath);
         req.tokenCount = tokenCount; // Pass token count to custom router
         model = await customRouter(req, configService.getAll(), {
           event,

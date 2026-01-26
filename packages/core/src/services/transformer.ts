@@ -2,6 +2,8 @@ import { Transformer, TransformerConstructor } from "@/types/transformer";
 import { ConfigService } from "./config";
 import Transformers from "@/transformer";
 import Module from "node:module";
+import { homedir } from "os";
+import { join } from "path";
 
 interface TransformerConfig {
   transformers: Array<{
@@ -85,7 +87,12 @@ export class TransformerService {
   }): Promise<boolean> {
     try {
       if (config.path) {
-        const module = require(require.resolve(config.path));
+        // Resolve tilde (~) in path before require
+        let resolvedPath = config.path;
+        if (config.path.startsWith('~/')) {
+          resolvedPath = join(homedir(), config.path.slice(2));
+        }
+        const module = require(require.resolve(resolvedPath));
         if (module) {
           const instance = new module(config.options);
           // Set logger for transformer instance
