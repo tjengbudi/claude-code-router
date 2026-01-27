@@ -902,6 +902,171 @@ ${JSON5.stringify(dataWithVersion, { space: 2 })}`;
   }
 
   /**
+   * Set workflow inheritance mode - Story 7.4
+   * Stores workflow model inheritance mode in projects.json under the workflow's entry
+   * Mode controls whether workflow inherits active model or uses configured default
+   * Uses optimistic locking via updatedAt timestamp to prevent concurrent modification conflicts
+   * @param projectId - UUID of the project containing the workflow
+   * @param workflowId - UUID of the workflow to configure
+   * @param mode - Inheritance mode: 'inherit' (keep active model) or 'default' (use workflow.model)
+   * @throws Error if project not found, workflow not found, mode is invalid, or concurrent modification detected
+   */
+  async setWorkflowInheritanceMode(
+    projectId: string,
+    workflowId: string,
+    mode: 'inherit' | 'default'
+  ): Promise<void> {
+    // Load projects data and capture timestamp for optimistic locking
+    const data = await this.loadProjects();
+    const project = data.projects[projectId];
+
+    // Validate project exists
+    if (!project) {
+      throw new Error(`Project not found: ${projectId}`);
+    }
+
+    // Capture original timestamp for conflict detection
+    const originalTimestamp = project.updatedAt;
+
+    // Validate project has workflows array
+    if (!project.workflows || project.workflows.length === 0) {
+      throw new Error(`Workflow not found: ${workflowId}. Project ${projectId} has no workflows configured`);
+    }
+
+    // Find workflow in project
+    const workflow = project.workflows.find(w => w.id === workflowId);
+    if (!workflow) {
+      throw new Error(`Workflow not found: ${workflowId} in project: ${projectId}`);
+    }
+
+    // Story 7.4: Validate inheritance mode using Validators.isValidInheritanceMode()
+    if (!Validators.isValidInheritanceMode(mode)) {
+      throw new Error(`Invalid inheritance mode: ${mode}. Expected 'inherit' or 'default'`);
+    }
+
+    // Update workflow modelInheritance field
+    workflow.modelInheritance = mode;
+
+    // Update project timestamp
+    const newTimestamp = new Date().toISOString();
+    project.updatedAt = newTimestamp;
+
+    // Optimistic locking: Reload and check if timestamp changed before save
+    const currentData = await this.loadProjects();
+    const currentProject = currentData.projects[projectId];
+
+    if (currentProject && currentProject.updatedAt && originalTimestamp &&
+        currentProject.updatedAt !== originalTimestamp) {
+      throw new Error(
+        `Concurrent modification detected for project ${projectId}. ` +
+        `Another process modified the project between read and write. ` +
+        `Please retry the operation.`
+      );
+    }
+
+    // Save to file using atomic write pattern
+    await this.saveProjects(data);
+
+    this.logger.info(`Workflow inheritance mode updated: ${workflow.name} -> ${mode}`);
+  }
+
+  /**
+   * Set workflow configuration (model AND inheritance mode) atomically - Story 7.4
+   * Updates both model and modelInheritance in a single atomic operation
+   * Uses optimistic locking via updatedAt timestamp to prevent concurrent modification conflicts
+   *
+   * @param projectId - UUID of the project containing the workflow
+   * @param workflowId - UUID of the workflow to configure
+   * @param model - Model string (e.g., "openai,gpt-4o"), undefined to remove model, or null to keep unchanged
+   * @param mode - Inheritance mode: 'inherit' or 'default', or null to keep unchanged
+   * @throws Error if project not found, workflow not found, mode is invalid, or concurrent modification detected
+   */
+  async setWorkflowConfig(
+    projectId: string,
+    workflowId: string,
+    model: string | undefined | null,
+    mode: 'inherit' | 'default' | null
+  ): Promise<void> {
+    // Load projects data and capture timestamp for optimistic locking
+    const data = await this.loadProjects();
+    const project = data.projects[projectId];
+
+    // Validate project exists
+    if (!project) {
+      throw new Error(`Project not found: ${projectId}`);
+    }
+
+    // Capture original timestamp for conflict detection
+    const originalTimestamp = project.updatedAt;
+
+    // Validate project has workflows array
+    if (!project.workflows || project.workflows.length === 0) {
+      throw new Error(`Workflow not found: ${workflowId}. Project ${projectId} has no workflows configured`);
+    }
+
+    // Find workflow in project
+    const workflow = project.workflows.find(w => w.id === workflowId);
+    if (!workflow) {
+      throw new Error(`Workflow not found: ${workflowId} in project: ${projectId}`);
+    }
+
+    // Track if any changes were made
+    let changed = false;
+
+    // Update model if provided (not null)
+    if (model !== null) {
+      if (model !== undefined && !Validators.isValidModelString(model)) {
+        throw new Error(`Invalid model string format: ${model}. Expected format: "provider,modelname" (e.g., "openai,gpt-4o")`);
+      }
+      if (workflow.model !== model) {
+        if (model === undefined) {
+          delete workflow.model;
+        } else {
+          workflow.model = model;
+        }
+        changed = true;
+      }
+    }
+
+    // Update inheritance mode if provided (not null)
+    if (mode !== null) {
+      if (!Validators.isValidInheritanceMode(mode)) {
+        throw new Error(`Invalid inheritance mode: ${mode}. Expected 'inherit' or 'default'`);
+      }
+      if (workflow.modelInheritance !== mode) {
+        workflow.modelInheritance = mode;
+        changed = true;
+      }
+    }
+
+    // If no changes, return early
+    if (!changed) {
+      return;
+    }
+
+    // Update project timestamp
+    project.updatedAt = new Date().toISOString();
+
+    // Optimistic locking: Reload and check if timestamp changed before save
+    const currentData = await this.loadProjects();
+    const currentProject = currentData.projects[projectId];
+
+    if (currentProject && currentProject.updatedAt && originalTimestamp &&
+        currentProject.updatedAt !== originalTimestamp) {
+      throw new Error(
+        `Concurrent modification detected for project ${projectId}. ` +
+        `Another process modified the project between read and write. ` +
+        `Please retry the operation.`
+      );
+    }
+
+    // Save to file using atomic write pattern (SINGLE atomic write)
+    await this.saveProjects(data);
+
+    this.logger.info(`Workflow configuration updated: ${workflow.name}`);
+  }
+
+  /**
    * Set model configuration for an agent - Story 2.1
    * Stores agent-to-model mapping in projects.json under the agent's entry
    * @param projectId - UUID of the project containing the agent

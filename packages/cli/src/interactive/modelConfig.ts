@@ -33,6 +33,7 @@ type EntityType = 'agent' | 'workflow';
 
 /**
  * Configuration change tracking - Story 6.4: Extended for workflows
+ * Story 7.4: Added inheritance mode tracking
  */
 interface ConfigurationChange {
   entityType: EntityType;
@@ -40,6 +41,8 @@ interface ConfigurationChange {
   entityName: string;
   oldModel: string | undefined;
   newModel: string | undefined;
+  oldInheritanceMode?: 'inherit' | 'default';  // Story 7.4
+  newInheritanceMode?: 'inherit' | 'default';  // Story 7.4
 }
 
 /**
@@ -54,8 +57,27 @@ export class ConfigurationSession {
     this.changes.set(`agent:${agentId}`, { entityType: 'agent', entityId: agentId, entityName: agentName, oldModel, newModel });
   }
 
-  addWorkflowChange(workflowId: string, workflowName: string, oldModel: string | undefined, newModel: string | undefined): void {
-    this.changes.set(`workflow:${workflowId}`, { entityType: 'workflow', entityId: workflowId, entityName: workflowName, oldModel, newModel });
+  addWorkflowChange(
+    workflowId: string,
+    workflowName: string,
+    oldModel: string | undefined,
+    newModel: string | undefined,
+    oldInheritanceMode?: 'inherit' | 'default',  // Story 7.4
+    newInheritanceMode?: 'inherit' | 'default'   // Story 7.4
+  ): void {
+    // Story 7.4: Always track inheritance mode
+    // We keep oldInheritanceMode as-is to detect transition from undefined -> default (normalization)
+    const effectiveNewMode = newInheritanceMode || 'default';
+
+    this.changes.set(`workflow:${workflowId}`, {
+      entityType: 'workflow',
+      entityId: workflowId,
+      entityName: workflowName,
+      oldModel,
+      newModel,
+      oldInheritanceMode,
+      newInheritanceMode: effectiveNewMode
+    });
   }
 
   async save(projectId: string): Promise<void> {
@@ -68,7 +90,18 @@ export class ConfigurationSession {
           await pm.setAgentModel(projectId, change.entityId, change.newModel);
           this.savedIds.add(change.entityId);
         } else if (change.entityType === 'workflow') {
-          await pm.setWorkflowModel(projectId, change.entityId, change.newModel);
+          // Story 7.4: Use atomic setWorkflowConfig for both model AND inheritance mode
+          // Pass null for values that didn't change
+          const modelChanged = change.newModel !== change.oldModel;
+          const modeChanged = change.newInheritanceMode !== change.oldInheritanceMode;
+
+          // Use atomic setWorkflowConfig method (Story 7.4 fix)
+          await pm.setWorkflowConfig(
+            projectId,
+            change.entityId,
+            modelChanged ? change.newModel : null,
+            modeChanged ? change.newInheritanceMode : null
+          );
           this.savedIds.add(change.entityId);
         }
       } catch (error) {
@@ -81,9 +114,13 @@ export class ConfigurationSession {
   }
 
   getSummary(): string[] {
-    return Array.from(this.changes.values()).map(change =>
-      `  - ${change.entityName} → ${change.newModel || '[default]'}`
-    );
+    return Array.from(this.changes.values()).map(change => {
+      // Story 7.4: Show inheritance mode for workflows
+      if (change.entityType === 'workflow' && change.newInheritanceMode) {
+        return `  - ${change.entityName} → ${change.newModel || '[default]'} [${change.newInheritanceMode}]`;
+      }
+      return `  - ${change.entityName} → ${change.newModel || '[default]'}`;
+    });
   }
 
   getCount(): number {
@@ -255,7 +292,8 @@ export async function interactiveModelConfiguration(projectId: string): Promise<
     console.log(`\n${DIM}--- Workflows ---${RESET}`);
     project.workflows!.forEach(workflow => {
       const model = workflow.model || '[default]';
-      console.log(`  ${workflow.name} → ${model}`);
+      const mode = workflow.modelInheritance || 'default';
+      console.log(`  ${workflow.name} → ${model} [${mode}]`);
     });
   }
 
@@ -279,9 +317,12 @@ export async function interactiveModelConfiguration(projectId: string): Promise<
       // Add workflow choices
       if (hasWorkflows) {
         for (const workflow of project.workflows!) {
+          // Story 7.4: Show inheritance mode for workflows
+          const modelDisplay = workflow.model || '[default]';
+          const modeDisplay = workflow.modelInheritance || 'default';
           entityChoices.push({
             value: `workflow:${workflow.id}`,
-            name: `${workflow.name} (workflow) → ${workflow.model || '[default]'}`
+            name: `${workflow.name} (workflow) → ${modelDisplay} [${modeDisplay}]`
           });
         }
       }
@@ -343,21 +384,71 @@ export async function interactiveModelConfiguration(projectId: string): Promise<
           continue;
         }
 
+        // Story 7.4: Prompt for both model AND inheritance mode
         const actualModel = await selectModelForEntity(workflow.name, workflow.model);
 
         if (actualModel === 'skip') {
           continue;
         }
 
-        // Track the change
-        session.addWorkflowChange(workflow.id, workflow.name, workflow.model, actualModel);
+        // Story 7.4: Prompt for inheritance mode
+        const defaultMode = workflow.modelInheritance || 'default';
+
+        // Build choices without skip (default value requires string value match)
+        const modeChoices = [
+          {
+            value: 'inherit',
+            name: 'inherit - Workflow keeps currently active model (seamless agent → workflow transition)',
+            description: 'Uses Router.default without override'
+          },
+          {
+            value: 'default',
+            name: 'default - Workflow uses its configured model (independent execution)',
+            description: 'Uses workflow.model as configured'
+          }
+        ];
+
+        const inheritanceMode = await select({
+          message: `Inheritance mode for ${workflow.name}:`,
+          choices: modeChoices,
+        } as any).catch((error) => {
+          if (error.name === 'ExitPromptError') {
+             // Re-throw exit prompts to be handled by main loop (cancellation)
+             throw error;
+          }
+          // Log other errors and treat as skip
+          console.error(`${RED}Error in prompt: ${error.message}${RESET}`);
+          return 'skip';
+        });
+
+        if (inheritanceMode === 'skip') {
+          continue;
+        }
+
+        // Validate the returned value (type safety)
+        if (inheritanceMode !== 'inherit' && inheritanceMode !== 'default') {
+          console.error(`${RED}✗ Error: Invalid inheritance mode selected${RESET}`);
+          continue;
+        }
+
+        // Track the change (Story 7.4: include inheritance mode)
+        session.addWorkflowChange(
+          workflow.id,
+          workflow.name,
+          workflow.model,
+          actualModel,
+          workflow.modelInheritance,
+          inheritanceMode as 'inherit' | 'default'
+        );
 
         // Update in-memory state for display
         workflow.model = actualModel;
+        workflow.modelInheritance = inheritanceMode as 'inherit' | 'default';
 
-        // Show confirmation
+        // Show confirmation (Story 7.4: include mode)
         const modelDisplay = actualModel || '[default]';
-        console.log(`${GREEN}✓ ${workflow.name} → ${modelDisplay}${RESET}`);
+        const modeDisplay = inheritanceMode || 'default';
+        console.log(`${GREEN}✓ ${workflow.name} → ${modelDisplay} [${modeDisplay}]${RESET}`);
       }
 
       // Loop continues - user will see entity selection menu again
