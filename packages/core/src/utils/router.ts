@@ -105,7 +105,7 @@ export const calculateTokenCount = (
 };
 
 
-import { extractRoutingId, extractAgentId, extractSessionId } from "./agentDetection";
+import { extractRoutingId, extractAgentId, extractSessionId, extractInlineModelOverrideFromRequest, validateModelFormat } from "./agentDetection";
 
 const getProjectSpecificRouter = async (
   req: any,
@@ -146,6 +146,20 @@ const getUseModel = async (
   configService: ConfigService,
   lastUsage?: Usage | undefined
 ): Promise<{ model: string; scenarioType: RouterScenarioType }> => {
+  // ============ START: Story 7.6 - Priority 0: Inline Model Override ============
+  // Extract inline directive from request (system prompt or messages)
+  const inlineOverride = extractInlineModelOverrideFromRequest(req);
+
+  if (inlineOverride) {
+    if (validateModelFormat(inlineOverride)) {
+      req.log.info({ override: inlineOverride }, '🔧 Inline model override');
+      return { model: inlineOverride, scenarioType: 'default' };
+    } else {
+      req.log.warn({ override: inlineOverride }, '⚠️ Invalid model format, falling back to next priority');
+    }
+  }
+  // ============ END: Story 7.6 - Inline Model Override ============
+
   const projectSpecificRouter = await getProjectSpecificRouter(req, configService);
   const providers = configService.get<any[]>("providers") || [];
   const Router = projectSpecificRouter || configService.get("Router");

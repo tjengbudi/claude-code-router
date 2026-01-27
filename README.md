@@ -461,7 +461,77 @@ ccr project configure <project-id>  # Optionally override local models
 - [CLI Project Commands](/docs/cli/commands/project) - Complete command reference
 - [Workflow Setup Guide](/docs/examples/workflow-setup) - Workflow setup guide
 
-### 8. Migration to CCR Enhanced Edition
+### 8. Inline Model Override (Prompt-Level)
+
+The **Inline Model Override** feature allows you to temporarily override the routing model for a single prompt by adding a special comment directive anywhere in your prompt text. This is useful for testing different models or using specific models for particular tasks without changing configuration files.
+
+**How to Use:**
+
+Add the `<!-- CCR-MODEL-OVERRIDE: provider,model -->` comment anywhere in your prompt:
+
+```bash
+# Directive at the beginning of prompt
+ccr
+> <!-- CCR-MODEL-OVERRIDE: kiro,claude-sonnet-4 --> Please analyze this code
+
+# Directive in the middle of prompt
+ccr
+> Please analyze <!-- CCR-MODEL-OVERRIDE: glm,glm-4-flash --> this code in detail
+
+# Directive at the end of prompt
+ccr
+> Please help me with this task <!-- CCR-MODEL-OVERRIDE: anthropic,claude-opus-4 -->
+```
+
+**Key Features:**
+
+- **Prompt-Level Scope**: The override only affects the specific prompt containing the directive. The next prompt without the directive returns to normal routing.
+- **Flexible Positioning**: The directive works at the beginning, middle, or end of your prompt text.
+- **Case-Insensitive**: Works with any case variation (e.g., `CCR-MODEL-OVERRIDE`, `ccr-model-override`, `CcR-MoDeL-OvErRiDe`).
+- **Whitespace Tolerant**: Whitespace around the colon is handled gracefully.
+
+**Priority Hierarchy:**
+
+The inline override has the highest priority in the routing chain:
+
+| Priority | Source | Scope | Example |
+|----------|--------|-------|---------|
+| 0 (Highest) | Inline directive | Single prompt | `<!-- CCR-MODEL-OVERRIDE: kiro,claude -->` |
+| 1 | Metadata tag | Single request | `CCR-AGENT-MODEL: provider,model` |
+| 2-6 | Router rules | Per-request | Subagent, think mode, web search, etc. |
+| 7 | Workflow inheritance | Workflow-specific | Epic 7 feature |
+| 8 | Agent config | Agent-specific | From projects.json |
+| 9 (Lowest) | Router default | Fallback | System default |
+
+**Invalid Format Handling:**
+
+If the override format is invalid (not `provider,model` pattern), CCR logs a warning and continues to the next priority level:
+
+```
+⚠️ Invalid model format: invalid-format, falling back to next priority
+```
+
+**Use Cases:**
+
+- **Testing Different Models**: Quickly test how different models handle the same task without changing configuration
+- **Temporary Workarounds**: Use a specific model for a one-off task that requires different capabilities
+- **Cost Optimization**: Use cheaper models for simple tasks and premium models for complex ones within the same session
+
+**Example: Mid-Conversation Model Switching**
+
+```bash
+ccr
+> What is the capital of France?
+[Uses Router.default or agent config]
+
+> <!-- CCR-MODEL-OVERRIDE: kiro,claude-sonnet-4 --> Explain quantum computing
+[Uses Kiro Claude Sonnet 4]
+
+> How do I bake a cake?
+[Returns to Router.default or agent config - no override]
+```
+
+### 9. Migration to CCR Enhanced Edition
 
 The CCR Enhanced Edition includes advanced features like **Workflow Support** and **Agent System** that are not available in the vanilla claude-code-router.
 
