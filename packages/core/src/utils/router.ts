@@ -216,8 +216,48 @@ const getUseModel = async (
     return { model: Router.think, scenarioType: 'think' };
   }
 
+  // ============ START: Workflow Inheritance Logic (Story 7.3 - Epic 7) ============
+  // Priority 6.5a: Workflow model inheritance check (before unified routing)
+  // Simple 2-mode system:
+  // - inherit: Skip workflow model, use Router.default (keep current routing)
+  // - default: Use workflow's configured model (handled by unified routing below)
+  const routingIdForInheritance = extractRoutingId(req, req.log);
+  if (routingIdForInheritance?.type === 'workflow') {
+    try {
+      // Detect project for workflow
+      const projectId = await projectManager.detectProjectByWorkflowId(routingIdForInheritance.id);
+      if (projectId) {
+        // Load workflow config to check inheritance mode
+        const workflowConfig = await projectManager.getWorkflowById(routingIdForInheritance.id, projectId);
+
+        if (workflowConfig) {
+          const mode = workflowConfig.modelInheritance || 'default';
+
+          if (mode === 'inherit') {
+            // Inherit mode: Don't use workflow model, fall through to Router.default
+            // This allows workflow to "inherit" whatever routing would normally apply
+            req.log.info({ workflow: workflowConfig.name, mode: 'inherit' },
+              'Workflow using inherit mode - using Router.default');
+            // Skip unified routing below by falling through to Router.default
+            const defaultModel = Router?.default || FALLBACK_DEFAULT_MODEL;
+            if (!Router?.default) {
+              req.log.warn(`Router.default not configured, using fallback: ${FALLBACK_DEFAULT_MODEL}`);
+            }
+            return { model: defaultModel, scenarioType: 'default' };
+          }
+          // Default mode: Continue with unified routing below (will use workflow model)
+          req.log.debug({ workflow: workflowConfig.name, mode: 'default' },
+            'Workflow using default mode - proceeding with model lookup');
+        }
+      }
+    } catch (error) {
+      req.log.debug({ error: (error as Error).message }, 'Workflow inheritance check failed, continuing routing');
+    }
+  }
+  // ============ END: Workflow Inheritance Logic (Story 7.3) ============
+
   // ============ START: Unified Routing System Integration (Story 6.3) ============
-  // Priority 6.5: Agent/Workflow-based routing (between "think model" and Router.default)
+  // Priority 6.5b: Agent/Workflow-based routing (between "think model" and Router.default)
   // Story 2.3 AC: When agent/workflow has no model configured, fall back to Router.default
   // Story 2.5: Auto-registration for zero-config team onboarding
   // Story 3.1: Session-based caching and project detection for multi-project support

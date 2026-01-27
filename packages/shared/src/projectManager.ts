@@ -1087,6 +1087,49 @@ ${JSON5.stringify(dataWithVersion, { space: 2 })}`;
   }
 
   /**
+   * Get full workflow configuration by workflow ID - Story 7.3
+   * Returns complete WorkflowConfig object including modelInheritance mode
+   * @param workflowId - UUID of the workflow
+   * @param projectId - Optional project ID for specific project search
+   * @returns WorkflowConfig object if found, undefined otherwise
+   */
+  async getWorkflowById(workflowId: string, projectId?: string): Promise<WorkflowConfig | undefined> {
+    // Validate workflow ID format
+    if (!Validators.isValidWorkflowId(workflowId)) {
+      this.logger.debug(`Invalid workflow ID format: ${workflowId} (expected UUID v4)`);
+      return undefined;
+    }
+
+    const projectsData = await this.loadProjects();
+
+    // Search in specific project if provided
+    if (projectId && projectsData.projects[projectId]) {
+      const project = projectsData.projects[projectId];
+      if (!project.workflows || project.workflows.length === 0) return undefined;
+
+      const workflow = project.workflows.find(w => w.id === workflowId);
+      if (workflow) {
+        this.logger.debug(`Workflow found: ${workflowId} in ${projectId}`);
+        return workflow;
+      }
+    }
+
+    // Search across all projects (O(n×m) - acceptable for cache miss)
+    for (const [projId, project] of Object.entries(projectsData.projects)) {
+      if (!project.workflows || project.workflows.length === 0) continue;
+
+      const workflow = project.workflows.find(w => w.id === workflowId);
+      if (workflow) {
+        this.logger.debug(`Workflow found (cross-project): ${workflowId} in ${projId}`);
+        return workflow;
+      }
+    }
+
+    this.logger.debug(`Workflow not found: ${workflowId}`);
+    return undefined;
+  }
+
+  /**
    * Detect which project contains a workflow by workflow ID - Story 6.3
    * Used for multi-project cache isolation and workflow lookup
    * @param workflowId - UUID of the workflow
