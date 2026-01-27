@@ -105,7 +105,7 @@ export const calculateTokenCount = (
 };
 
 
-import { extractRoutingId, extractAgentId, extractSessionId, extractInlineModelOverrideFromRequest, validateModelFormat } from "./agentDetection";
+import { extractRoutingId, extractAgentId, extractSessionId, extractInlineModelOverrideFromRequest, extractAgentModelOverrideFromRequest, validateModelFormat } from "./agentDetection";
 
 const getProjectSpecificRouter = async (
   req: any,
@@ -152,13 +152,24 @@ const getUseModel = async (
 
   if (inlineOverride) {
     if (validateModelFormat(inlineOverride)) {
-      req.log.info({ override: inlineOverride }, '🔧 Inline model override');
+      req.log.info({ override: inlineOverride, source: 'inline' }, '🔧 Inline model override');
       return { model: inlineOverride, scenarioType: 'default' };
     } else {
-      req.log.warn({ override: inlineOverride }, '⚠️ Invalid model format, falling back to next priority');
+      req.log.warn({ override: inlineOverride }, `⚠️ Invalid model format: ${inlineOverride}, falling back to next priority`);
     }
   }
   // ============ END: Story 7.6 - Inline Model Override ============
+
+  // Priority 1: Metadata tag override (CCR-AGENT-MODEL)
+  const agentModelOverride = extractAgentModelOverrideFromRequest(req);
+  if (agentModelOverride) {
+    if (validateModelFormat(agentModelOverride)) {
+      req.log.info({ override: agentModelOverride, source: 'metadata' }, '🔧 Metadata model override');
+      return { model: agentModelOverride, scenarioType: 'default' };
+    } else {
+      req.log.warn({ override: agentModelOverride }, `⚠️ Invalid model format: ${agentModelOverride}, falling back to next priority`);
+    }
+  }
 
   const projectSpecificRouter = await getProjectSpecificRouter(req, configService);
   const providers = configService.get<any[]>("providers") || [];

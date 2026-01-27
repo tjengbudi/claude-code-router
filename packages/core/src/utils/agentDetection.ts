@@ -8,6 +8,8 @@ const WORKFLOW_ID_PATTERN = /<!-- CCR-WORKFLOW-ID: ([a-fA-F0-9-]+) -->/i;
 // Allows whitespace before and after colon
 // Non-greedy (.+?) ensures we capture content until FIRST closing tag, preventing cross-comment extraction
 const INLINE_MODEL_OVERRIDE_PATTERN = /<!--\s*CCR-MODEL-OVERRIDE\s*:\s*(.+?)\s*-->/i;
+// Metadata tag override (legacy CCR custom): <!-- CCR-AGENT-MODEL: provider,model -->
+const AGENT_MODEL_OVERRIDE_PATTERN = /<!--\s*CCR-AGENT-MODEL\s*:\s*(.+?)\s*-->/i;
 
 // Story 6.3: RoutingId interface for unified agent/workflow detection
 export interface RoutingId {
@@ -235,6 +237,79 @@ export const extractInlineModelOverride = (text: string): string | undefined => 
 };
 
 /**
+ * Extract metadata model override tag from text - Story 7.6
+ * Extracts `<!-- CCR-AGENT-MODEL: provider,model -->` directive from text
+ *
+ * @param text - Text to search for metadata model override tag
+ * @returns Model string or undefined if not found
+ */
+export const extractAgentModelOverride = (text: string): string | undefined => {
+  if (!text || typeof text !== 'string') {
+    return undefined;
+  }
+
+  const match = text.match(AGENT_MODEL_OVERRIDE_PATTERN);
+  if (match && match[1]) {
+    return match[1].trim();
+  }
+
+  return undefined;
+};
+
+const extractTextFromContent = (content: string | any[]): string | undefined => {
+  if (typeof content === 'string') {
+    return content;
+  }
+
+  if (Array.isArray(content)) {
+    const parts: string[] = [];
+    for (const item of content) {
+      if (typeof item === 'string') {
+        parts.push(item);
+      } else if (item && typeof item === 'object' && item.type === 'text' && item.text) {
+        parts.push(item.text);
+      }
+    }
+    return parts.length > 0 ? parts.join('\n') : undefined;
+  }
+
+  return undefined;
+};
+
+/**
+ * Extract current prompt text from request - Story 7.6
+ * Uses the latest message content to enforce prompt-level scope
+ *
+ * @param req - Claude Code API request object
+ * @returns Text for the current prompt or undefined
+ */
+export const extractCurrentPromptText = (req: AgentDetectionRequest): string | undefined => {
+  if (!req?.body) {
+    return undefined;
+  }
+
+  const parts: string[] = [];
+
+  if (Array.isArray(req.body.messages) && req.body.messages.length > 0) {
+    const lastMessage = req.body.messages[req.body.messages.length - 1];
+    const text = extractTextFromContent(lastMessage?.content);
+    if (text) {
+      parts.push(text);
+    }
+  }
+
+  if (Array.isArray(req.body.system)) {
+    for (const block of req.body.system) {
+      if (block.type === 'text' && block.text) {
+        parts.push(block.text);
+      }
+    }
+  }
+
+  return parts.length > 0 ? parts.join('\n') : undefined;
+};
+
+/**
  * Extract all text content from request for inline override detection - Story 7.6
  * Searches both system prompt and message history for inline override directive
  *
@@ -289,8 +364,20 @@ export const extractTextFromRequest = (req: AgentDetectionRequest): string | und
  * @performance <2ms extraction time
  */
 export const extractInlineModelOverrideFromRequest = (req: AgentDetectionRequest): string | undefined => {
-  const text = extractTextFromRequest(req);
+  const text = extractCurrentPromptText(req);
   return text ? extractInlineModelOverride(text) : undefined;
+};
+
+/**
+ * Extract metadata model override from request - Story 7.6
+ * Uses current prompt text to enforce prompt-level scope
+ *
+ * @param req - Claude Code API request object
+ * @returns Model string or undefined if not found
+ */
+export const extractAgentModelOverrideFromRequest = (req: AgentDetectionRequest): string | undefined => {
+  const text = extractCurrentPromptText(req);
+  return text ? extractAgentModelOverride(text) : undefined;
 };
 
 /**
