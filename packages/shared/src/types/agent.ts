@@ -10,7 +10,15 @@ export interface AgentConfig {
 }
 
 /**
+ * Workflow model inheritance mode (Story 7.1)
+ * - inherit: Workflow keeps currently active model (no override)
+ * - default: Workflow uses its configured model
+ */
+export type ModelInheritanceMode = 'inherit' | 'default';
+
+/**
  * Workflow metadata interface (Story 6.1)
+ * Story 7.1: Added modelInheritance for simple 2-mode inheritance system
  */
 export interface WorkflowConfig {
   id: string;              // UUID v4 (will be added in Story 6.2)
@@ -19,6 +27,7 @@ export interface WorkflowConfig {
   relativePath: string;    // e.g., ".bmad/bmm/workflows/correct-course"
   absolutePath: string;    // Full path to workflow directory
   model?: string;          // Optional model assignment (added in Story 6.4)
+  modelInheritance?: ModelInheritanceMode;  // Story 7.1: Simple 2-mode inheritance (default: 'default')
 }
 
 /**

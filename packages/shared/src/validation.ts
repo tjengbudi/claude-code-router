@@ -166,6 +166,7 @@ export class Validators {
   /**
    * Validate WorkflowConfig structure - Story 6.1
    * Story 6.2: Enhanced with UUID format validation for id field
+   * Story 7.1: Added modelInheritance field validation
    * @param workflow - Workflow object to validate
    * @returns true if workflow has valid structure
    */
@@ -173,6 +174,13 @@ export class Validators {
     // Story 6.2: Validate UUID format if id field is present and non-empty
     if (workflow.id && workflow.id !== '') {
       if (!this.isValidWorkflowId(workflow.id)) {
+        return false;
+      }
+    }
+
+    // Story 7.1: Validate modelInheritance if present
+    if (workflow.modelInheritance !== undefined) {
+      if (!this.isValidInheritanceMode(workflow.modelInheritance)) {
         return false;
       }
     }
@@ -185,6 +193,22 @@ export class Validators {
       typeof workflow.relativePath === 'string' &&
       typeof workflow.absolutePath === 'string'
     );
+  }
+
+  /**
+   * Validate model inheritance mode - Story 7.1
+   * Simple 2-mode system: inherit or default
+   * @param mode - Inheritance mode to validate
+   * @returns true if mode is valid ('inherit', 'default', or undefined)
+   */
+  static isValidInheritanceMode(mode: string | undefined): boolean {
+    // undefined is valid (defaults to 'default' mode)
+    if (mode === undefined) {
+      return true;
+    }
+
+    // Only 'inherit' or 'default' are valid modes
+    return mode === 'inherit' || mode === 'default';
   }
 
   /**
