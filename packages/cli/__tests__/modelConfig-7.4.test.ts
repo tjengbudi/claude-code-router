@@ -1,9 +1,14 @@
 /**
  * Integration tests for Story 7.4: CLI Workflow Model Inheritance Configuration
  *
+ * UX Refinement: Single unified prompt for workflow configuration
+ * - User selects from: [Inherit active model], [Router.default], or specific model
+ * - Selection automatically maps to model + modelInheritance fields
+ * - Default selection is [Inherit active model] (recommended)
+ *
  * Tests the CLI functionality for configuring workflow inheritance mode:
  * - Workflow entity display shows inheritance mode
- * - Inheritance mode selection prompt (inherit | default)
+ * - Single unified selection (model + inheritance in one prompt)
  * - ConfigurationSession tracks inheritance mode changes
  * - ProjectManager.setWorkflowInheritanceMode() method
  * - ProjectManager.setWorkflowConfig() atomic method

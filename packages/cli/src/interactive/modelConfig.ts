@@ -279,6 +279,20 @@ export async function interactiveModelConfiguration(projectId: string): Promise<
 
   console.log(`${CYAN}\nConfiguring project: ${project.name}${RESET}`);
 
+  // Helper function to format workflow display (Story 7.4 UX refinement)
+  const formatWorkflowDisplay = (workflow: WorkflowConfig): string => {
+    const mode = workflow.modelInheritance || 'default';
+
+    if (mode === 'inherit') {
+      // Inherit mode: model is ignored, show [inherit] only
+      return '[inherit]';
+    } else {
+      // Default mode: show model (or [default] if undefined)
+      const model = workflow.model || '[default]';
+      return model;
+    }
+  };
+
   // Display current configuration
   if (hasAgents) {
     console.log(`\n${DIM}--- Agents ---${RESET}`);
@@ -291,9 +305,7 @@ export async function interactiveModelConfiguration(projectId: string): Promise<
   if (hasWorkflows) {
     console.log(`\n${DIM}--- Workflows ---${RESET}`);
     project.workflows!.forEach(workflow => {
-      const model = workflow.model || '[default]';
-      const mode = workflow.modelInheritance || 'default';
-      console.log(`  ${workflow.name} → ${model} [${mode}]`);
+      console.log(`  ${workflow.name} → ${formatWorkflowDisplay(workflow)}`);
     });
   }
 
@@ -317,12 +329,10 @@ export async function interactiveModelConfiguration(projectId: string): Promise<
       // Add workflow choices
       if (hasWorkflows) {
         for (const workflow of project.workflows!) {
-          // Story 7.4: Show inheritance mode for workflows
-          const modelDisplay = workflow.model || '[default]';
-          const modeDisplay = workflow.modelInheritance || 'default';
+          // Story 7.4 UX refinement: Use smart display format
           entityChoices.push({
             value: `workflow:${workflow.id}`,
-            name: `${workflow.name} (workflow) → ${modelDisplay} [${modeDisplay}]`
+            name: `${workflow.name} (workflow) → ${formatWorkflowDisplay(workflow)}`
           });
         }
       }
@@ -332,6 +342,9 @@ export async function interactiveModelConfiguration(projectId: string): Promise<
         { value: ACTION_DONE, name: '[Done - Save changes]' },
         { value: ACTION_CANCEL, name: '[Cancel]' }
       );
+
+      // Add visual spacing before prompt (Story 7.4 UX refinement)
+      console.log('');
 
       // Entity selection prompt
       const selectedEntity = await select({
@@ -361,7 +374,19 @@ export async function interactiveModelConfiguration(projectId: string): Promise<
           continue;
         }
 
-        const actualModel = await selectModelForEntity(agent.name, agent.model);
+        // Story 7.4: Skip option or Ctrl+C returns to entity menu
+        let actualModel: string | undefined | 'skip';
+        try {
+          actualModel = await selectModelForEntity(agent.name, agent.model);
+        } catch (error: any) {
+          // Handle Ctrl+C/ESC - check multiple error types
+          if (error.name === 'ExitPromptError' || error.name === 'CancelPromptError' || error.message?.includes('User force closed')) {
+            // User pressed Ctrl+C or ESC - return to entity menu
+            console.log(`${YELLOW}\nCancelled${RESET}`);
+            continue;
+          }
+          throw error;
+        }
 
         if (actualModel === 'skip') {
           continue;
@@ -384,51 +409,85 @@ export async function interactiveModelConfiguration(projectId: string): Promise<
           continue;
         }
 
-        // Story 7.4: Prompt for both model AND inheritance mode
-        const actualModel = await selectModelForEntity(workflow.name, workflow.model);
+        // Story 7.4 UX refinement: Single unified prompt for model + inheritance
+        // Build unified choices: [Inherit], [Router.default], then models
+        const availableModels = await getAvailableModels();
+        const modelChoices = availableModels.map(m => ({
+          value: m.value,
+          name: m.label
+        }));
 
-        if (actualModel === 'skip') {
-          continue;
-        }
-
-        // Story 7.4: Prompt for inheritance mode
-        const defaultMode = workflow.modelInheritance || 'default';
-
-        // Build choices without skip (default value requires string value match)
-        const modeChoices = [
+        // Special options at the top
+        const unifiedChoices = [
           {
-            value: 'inherit',
-            name: 'inherit - Workflow keeps currently active model (seamless agent → workflow transition)',
-            description: 'Uses Router.default without override'
+            value: 'INHERIT',
+            name: '[Inherit active model] - Seamless agent → workflow transition (recommended)'
           },
           {
-            value: 'default',
-            name: 'default - Workflow uses its configured model (independent execution)',
-            description: 'Uses workflow.model as configured'
-          }
+            value: VALUE_DEFAULT,
+            name: '[Use Router.default] - Use CCR default routing'
+          },
+          {
+            value: 'SKIP',
+            name: '[Skip - Go back to menu]'
+          },
+          ...modelChoices
         ];
 
-        const inheritanceMode = await select({
-          message: `Inheritance mode for ${workflow.name}:`,
-          choices: modeChoices,
-        } as any).catch((error) => {
-          if (error.name === 'ExitPromptError') {
-             // Re-throw exit prompts to be handled by main loop (cancellation)
-             throw error;
-          }
-          // Log other errors and treat as skip
-          console.error(`${RED}Error in prompt: ${error.message}${RESET}`);
-          return 'skip';
-        });
+        // Default selection: inherit mode (recommended)
+        const currentMode = workflow.modelInheritance || 'default';
+        const defaultSelection = currentMode === 'inherit' ? 'INHERIT' : (workflow.model || VALUE_DEFAULT);
 
-        if (inheritanceMode === 'skip') {
+        // Add visual spacing before prompt (Story 7.4 UX refinement)
+        console.log('');
+
+        // Single prompt for workflow configuration with skip support
+        let selection: string;
+        try {
+          selection = await select({
+            message: `Select routing strategy for ${workflow.name}:`,
+            choices: unifiedChoices,
+            default: defaultSelection
+          });
+        } catch (error: any) {
+          // Handle Ctrl+C/ESC - check multiple error types
+          if (error.name === 'ExitPromptError' || error.name === 'CancelPromptError' || error.message?.includes('User force closed')) {
+            // User pressed Ctrl+C or ESC - return to entity menu
+            console.log(`${YELLOW}\nCancelled${RESET}`);
+            continue;
+          }
+          // Re-throw if not a cancellation
+          throw error;
+        }
+
+        // Handle skip - return to entity menu
+        if (selection === 'SKIP') {
           continue;
         }
 
-        // Validate the returned value (type safety)
-        if (inheritanceMode !== 'inherit' && inheritanceMode !== 'default') {
-          console.error(`${RED}✗ Error: Invalid inheritance mode selected${RESET}`);
-          continue;
+        // Map selection to model + inheritanceMode
+        let actualModel: string | undefined;
+        let inheritanceMode: 'inherit' | 'default';
+
+        if (selection === 'INHERIT') {
+          // Inherit active model: keep existing model, set inherit mode
+          actualModel = workflow.model;
+          inheritanceMode = 'inherit';
+        } else if (selection === VALUE_DEFAULT) {
+          // Use Router.default: clear model, set default mode
+          actualModel = undefined;
+          inheritanceMode = 'default';
+        } else {
+          // Specific model selected: set model, use default mode
+          actualModel = selection;
+          inheritanceMode = 'default';
+
+          // Validate model format
+          if (!Validators.isValidModelString(actualModel)) {
+            console.error(`${RED}✗ Error: Invalid model format: ${actualModel}${RESET}`);
+            console.log(`${DIM}  Model must be in format: provider,modelname${RESET}`);
+            continue;
+          }
         }
 
         // Track the change (Story 7.4: include inheritance mode)
@@ -438,24 +497,25 @@ export async function interactiveModelConfiguration(projectId: string): Promise<
           workflow.model,
           actualModel,
           workflow.modelInheritance,
-          inheritanceMode as 'inherit' | 'default'
+          inheritanceMode
         );
 
         // Update in-memory state for display
         workflow.model = actualModel;
-        workflow.modelInheritance = inheritanceMode as 'inherit' | 'default';
+        workflow.modelInheritance = inheritanceMode;
 
         // Show confirmation (Story 7.4: include mode)
         const modelDisplay = actualModel || '[default]';
-        const modeDisplay = inheritanceMode || 'default';
+        const modeDisplay = inheritanceMode;
         console.log(`${GREEN}✓ ${workflow.name} → ${modelDisplay} [${modeDisplay}]${RESET}`);
       }
 
       // Loop continues - user will see entity selection menu again
 
     } catch (error: any) {
-      if (error.name === 'ExitPromptError') {
-        // User pressed Ctrl+C
+      // Handle Ctrl+C/ESC at top level - check multiple error types
+      if (error.name === 'ExitPromptError' || error.name === 'CancelPromptError' || error.message?.includes('User force closed')) {
+        // User pressed Ctrl+C or ESC at entity menu - exit configuration
         console.log(`${YELLOW}\nConfiguration interrupted, no changes saved${RESET}`);
         return;
       }
@@ -535,16 +595,28 @@ async function selectModelForEntity(
     value: VALUE_DEFAULT,
     name: '[Use Router.default]'
   });
+  modelChoices.push({
+    value: 'skip',
+    name: '[Skip - Go back to menu]'
+  });
 
   // Default to current model or Router.default
   const defaultModel = currentModel || VALUE_DEFAULT;
 
-  // Model selection prompt
+  // Add visual spacing before prompt (Story 7.4 UX refinement)
+  console.log('');
+
+  // Model selection prompt with skip option
   const selectedModel = await select({
     message: `Select model for ${entityName}:`,
     choices: modelChoices,
     default: defaultModel
   });
+
+  // Handle skip selection
+  if (selectedModel === 'skip') {
+    return 'skip';
+  }
 
   // Validate selection before storing
   const actualModel = selectedModel === VALUE_DEFAULT ? undefined : selectedModel;
