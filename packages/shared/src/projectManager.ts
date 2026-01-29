@@ -262,16 +262,17 @@ ${JSON5.stringify(dataWithVersion, { space: 2 })}`;
 
     // Validate consistency if both exist
     if (yamlId && mdId && yamlId !== mdId) {
-      this.logger.warn(`Workflow ID mismatch: workflow.yaml=${yamlId}, instructions.md=${mdId}. Using workflow.yaml ID.`);
-      return yamlId;
+      this.logger.warn(`Workflow ID mismatch: workflow.yaml=${yamlId}, instructions.md=${mdId}. Using instructions.md ID (priority).`);
+      return mdId; // FIXED: Prioritize instructions.md (sent to Claude)
     }
 
-    return yamlId || mdId;
+    // FIXED: Prioritize instructions.md over workflow.yaml
+    return mdId || yamlId;
   }
 
   /**
    * Inject workflow ID into workflow files - Story 6.2
-   * Prefers workflow.yaml, falls back to instructions.md
+   * FIXED: Prefers instructions.md (sent to Claude for routing), falls back to workflow.yaml
    * @param workflowPath - Absolute path to the workflow directory
    * @param workflowId - Workflow ID to inject
    * @returns Path to the file that was injected
@@ -285,35 +286,7 @@ ${JSON5.stringify(dataWithVersion, { space: 2 })}`;
     const yamlPath = path.join(workflowPath, 'workflow.yaml');
     const instructionsPath = path.join(workflowPath, 'instructions.md');
 
-    // Try workflow.yaml first
-    try {
-      await fs.access(yamlPath);
-      await fs.access(yamlPath, fs.constants.W_OK);
-
-      const yamlContent = await fs.readFile(yamlPath, 'utf-8');
-
-      if (yamlContent.includes('CCR-WORKFLOW-ID:')) {
-        this.logger.warn(`Workflow ID already exists in ${yamlPath}`);
-        return yamlPath;
-      }
-
-      if (yamlContent.trim().length === 0) {
-        this.logger.warn(`Empty workflow.yaml at ${yamlPath}, skipping injection`);
-        throw new Error('Empty file');
-      }
-
-      this.logger.debug('Attempting workflow.yaml injection');
-      const idTag = `# CCR-WORKFLOW-ID: ${workflowId}`;
-      const newContent = `${idTag}\n${yamlContent}`;
-
-      await this.safeFileWrite(yamlPath, newContent);
-      this.logger.info(`Injected workflow ID into workflow.yaml: ${workflowId}`);
-      return yamlPath;
-    } catch (error) {
-      this.logger.debug(`Cannot inject into workflow.yaml: ${(error as Error).message}. Trying instructions.md`);
-    }
-
-    // Fallback to instructions.md
+    // PRIORITY 1: Try instructions.md first (this file is sent to Claude for routing)
     try {
       await fs.access(instructionsPath);
       await fs.access(instructionsPath, fs.constants.W_OK);
@@ -330,15 +303,43 @@ ${JSON5.stringify(dataWithVersion, { space: 2 })}`;
         throw new Error('Empty file');
       }
 
-      this.logger.debug('Falling back to instructions.md injection');
+      this.logger.debug('Attempting instructions.md injection (priority 1)');
       const idTag = `<!-- CCR-WORKFLOW-ID: ${workflowId} -->`;
-      const newContent = `${idTag}\n${mdContent}`;
+      const newContent = `${idTag}\n\n${mdContent}`;
 
       await this.safeFileWrite(instructionsPath, newContent);
       this.logger.info(`Injected workflow ID into instructions.md: ${workflowId}`);
       return instructionsPath;
     } catch (error) {
-      throw new Error(`Cannot inject workflow ID: neither workflow.yaml nor instructions.md is writable in ${workflowPath}`);
+      this.logger.debug(`Cannot inject into instructions.md: ${(error as Error).message}. Trying workflow.yaml`);
+    }
+
+    // PRIORITY 2: Fallback to workflow.yaml (metadata only, not sent to Claude)
+    try {
+      await fs.access(yamlPath);
+      await fs.access(yamlPath, fs.constants.W_OK);
+
+      const yamlContent = await fs.readFile(yamlPath, 'utf-8');
+
+      if (yamlContent.includes('CCR-WORKFLOW-ID:')) {
+        this.logger.warn(`Workflow ID already exists in ${yamlPath}`);
+        return yamlPath;
+      }
+
+      if (yamlContent.trim().length === 0) {
+        this.logger.warn(`Empty workflow.yaml at ${yamlPath}, skipping injection`);
+        throw new Error('Empty file');
+      }
+
+      this.logger.debug('Falling back to workflow.yaml injection (priority 2)');
+      const idTag = `# CCR-WORKFLOW-ID: ${workflowId}`;
+      const newContent = `${idTag}\n${yamlContent}`;
+
+      await this.safeFileWrite(yamlPath, newContent);
+      this.logger.info(`Injected workflow ID into workflow.yaml: ${workflowId}`);
+      return yamlPath;
+    } catch (error) {
+      throw new Error(`Cannot inject workflow ID: neither instructions.md nor workflow.yaml is writable in ${workflowPath}`);
     }
   }
 

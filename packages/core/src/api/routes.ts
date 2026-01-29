@@ -216,8 +216,10 @@ async function processRequestTransformers(
   if (bypass) {
     if (headers instanceof Headers) {
       headers.delete("content-length");
+      headers.delete("transfer-encoding");
     } else {
       delete headers["content-length"];
+      delete headers["transfer-encoding"];
     }
     config.headers = headers;
   }

@@ -28,8 +28,8 @@ export const WORKFLOW_ID_REGEX = AGENT_ID_REGEX;
 
 // Model string regex pattern (provider,modelname) - Story 2.1
 // Validates format: "openai,gpt-4o", "anthropic,claude-3-5-sonnet-20241022", "openrouter,meta-llama/llama-3-70b", etc.
-// Supports forward slashes in model names for providers like openrouter
-export const MODEL_STRING_REGEX = /^[a-z0-9_-]+,[a-z0-9_./-]+$/i;
+// Supports forward slashes and colons in model names for providers like openrouter (e.g., "qwen/qwen3-coder:free")
+export const MODEL_STRING_REGEX = /^[a-z0-9_-]+,[a-z0-9_.:/-]+$/i;
 
 // API key patterns to reject (security: NFR-S1)
 export const API_KEY_PATTERNS = [

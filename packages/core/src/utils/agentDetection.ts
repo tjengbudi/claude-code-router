@@ -1,8 +1,9 @@
 import { Validators } from "@CCR/shared";
 
 // Story 6.3: Pre-compiled regex patterns for routing ID extraction (performance optimization)
-const AGENT_ID_PATTERN = /<!-- CCR-AGENT-ID: ([a-fA-F0-9-]+) -->/i;
-const WORKFLOW_ID_PATTERN = /<!-- CCR-WORKFLOW-ID: ([a-fA-F0-9-]+) -->/i;
+// Support both HTML comments (<!-- ... -->) and hash comments (# ...)
+const AGENT_ID_PATTERN = /(?:<!--\s*CCR-AGENT-ID:\s*([a-fA-F0-9-]+)\s*-->|#\s*CCR-AGENT-ID:\s*([a-fA-F0-9-]+))/i;
+const WORKFLOW_ID_PATTERN = /(?:<!--\s*CCR-WORKFLOW-ID:\s*([a-fA-F0-9-]+)\s*-->|#\s*CCR-WORKFLOW-ID:\s*([a-fA-F0-9-]+))/i;
 
 // Story 7.6: Inline model override directive pattern (case-insensitive)
 // Allows whitespace before and after colon
@@ -74,20 +75,24 @@ export const extractRoutingId = (req: AgentDetectionRequest, log?: Logger): Rout
         if (!workflowId && block.text.includes('CCR-WORKFLOW-ID')) {
           const match = block.text.match(WORKFLOW_ID_PATTERN);
           if (match) {
-            if (Validators.isValidWorkflowId(match[1])) {
-              workflowId = match[1];
+            // match[1] is HTML format, match[2] is hash format
+            const id = match[1] || match[2];
+            if (id && Validators.isValidWorkflowId(id)) {
+              workflowId = id;
             } else if (log?.warn) {
-              log.warn({ workflowId: match[1] }, 'Invalid workflow ID format');
+              log.warn({ workflowId: id }, 'Invalid workflow ID format');
             }
           }
         }
         if (!agentId && block.text.includes('CCR-AGENT-ID')) {
           const match = block.text.match(AGENT_ID_PATTERN);
           if (match) {
-            if (Validators.isValidAgentId(match[1])) {
-              agentId = match[1];
+            // match[1] is HTML format, match[2] is hash format
+            const id = match[1] || match[2];
+            if (id && Validators.isValidAgentId(id)) {
+              agentId = id;
             } else if (log?.warn) {
-              log.warn({ agentId: match[1] }, 'Invalid agent ID format');
+              log.warn({ agentId: id }, 'Invalid agent ID format');
             }
           }
         }
@@ -102,20 +107,22 @@ export const extractRoutingId = (req: AgentDetectionRequest, log?: Logger): Rout
         if (!workflowId && message.content.includes('CCR-WORKFLOW-ID')) {
           const match = message.content.match(WORKFLOW_ID_PATTERN);
           if (match) {
-            if (Validators.isValidWorkflowId(match[1])) {
-              workflowId = match[1];
+            const id = match[1] || match[2];
+            if (id && Validators.isValidWorkflowId(id)) {
+              workflowId = id;
             } else if (log?.warn) {
-              log.warn({ workflowId: match[1] }, 'Invalid workflow ID format');
+              log.warn({ workflowId: id }, 'Invalid workflow ID format');
             }
           }
         }
         if (!agentId && message.content.includes('CCR-AGENT-ID')) {
           const match = message.content.match(AGENT_ID_PATTERN);
           if (match) {
-            if (Validators.isValidAgentId(match[1])) {
-              agentId = match[1];
+            const id = match[1] || match[2];
+            if (id && Validators.isValidAgentId(id)) {
+              agentId = id;
             } else if (log?.warn) {
-              log.warn({ agentId: match[1] }, 'Invalid agent ID format');
+              log.warn({ agentId: id }, 'Invalid agent ID format');
             }
           }
         }
@@ -134,20 +141,22 @@ export const extractRoutingId = (req: AgentDetectionRequest, log?: Logger): Rout
             if (!workflowId && textContent.includes('CCR-WORKFLOW-ID')) {
               const match = textContent.match(WORKFLOW_ID_PATTERN);
               if (match) {
-                if (Validators.isValidWorkflowId(match[1])) {
-                  workflowId = match[1];
+                const id = match[1] || match[2];
+                if (id && Validators.isValidWorkflowId(id)) {
+                  workflowId = id;
                 } else if (log?.warn) {
-                  log.warn({ workflowId: match[1] }, 'Invalid workflow ID format');
+                  log.warn({ workflowId: id }, 'Invalid workflow ID format');
                 }
               }
             }
             if (!agentId && textContent.includes('CCR-AGENT-ID')) {
               const match = textContent.match(AGENT_ID_PATTERN);
               if (match) {
-                if (Validators.isValidAgentId(match[1])) {
-                  agentId = match[1];
+                const id = match[1] || match[2];
+                if (id && Validators.isValidAgentId(id)) {
+                  agentId = id;
                 } else if (log?.warn) {
-                  log.warn({ agentId: match[1] }, 'Invalid agent ID format');
+                  log.warn({ agentId: id }, 'Invalid agent ID format');
                 }
               }
             }
